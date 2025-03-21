@@ -1,0 +1,346 @@
+---
+title: "Exploration of all the datasets"
+author: "Alexandre Tribut"
+date: June 25, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r,echo=FALSE}
+source('../tools.R')
+```
+
+# Cabauw
+
+## Measurements
+
+The most issues we have is on measurement data because the methods to measure the wind can sometimes be different from one time to another.
+
+The wind speed is measured at the location of Cabauw for different heights between 10m and 200m. We have data from 1987 and 2024.
+
+```{r}
+Cabauw_measure <- read.csv("../../../Data/Data_Cabauw/Cabauw_measure.csv")
+Cabauw_measure$Year = ymd(Cabauw_measure$Year)
+Cabauw_measure$DateTime = ymd_hms(Cabauw_measure$DateTime)
+
+
+ggplot(Cabauw_measure,aes(x=DateTime,y=F200))+geom_line()
+
+Cabauw_measure = Cabauw_measure[(Cabauw_measure$DateTime >= ymd("2001-07-01") & Cabauw_measure$DateTime  < ymd("2019-07-01")) |
+            (Cabauw_measure$DateTime >= ymd("1991-07-01") & Cabauw_measure$DateTime  < ymd("1997-07-01")) |
+            (Cabauw_measure$DateTime >= ymd("1987-07-01") & Cabauw_measure$DateTime  < ymd("1989-07-01")) ,]
+
+boxplot(Cabauw_measure[, grepl("^F", names(Cabauw_measure))],main = "Boxplot of the measurements at Cabauw between 1987 and 2019")
+
+
+Cabauw_measure = Cabauw_measure[(Cabauw_measure$DateTime >= ymd("2001-07-01") & Cabauw_measure$DateTime  < ymd("2019-07-01")),]
+
+boxplot(Cabauw_measure[, grepl("^F", names(Cabauw_measure))],main = "Boxplot of the measurements at Cabauw between 2001 and 2019")
+```
+
+The time series plot show the 200m height wind speeds. The boxplots show the distribution of wind speed for each heights, firstly for all the complete years and secondly for only data between 2001 and 2020.
+
+We can see that we have some missing data. Furthermore, at 20m, 140m and 200m, (boxplot 1) there are big outliers in the dataset before 2000 and At 200m, there are some negative values. That is strange because the wind values should be absolute. The integrity of the data is not guarantee and we decided to not take in account any data prior to 2000 before the Cabauw team could exactly find out where it came from.
+
+We decided to keep the data between 2001 and 2020 for now.
+
+```{r}
+# Create frequency data by grouping by year and counting occurrences
+freq_data <- Cabauw_measure %>%
+  group_by(year = lubridate::year(Year)) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+# Plot the data
+ggplot(freq_data, aes(x = year, y = count)) +
+  geom_line() +
+  geom_point(shape = '+') +
+  labs(x = 'Year', y = 'Count') +
+  theme_minimal() +
+  theme(legend.position = 'bottom')
+
+```
+
+we have almost 150 more value for some years but it is negligible for the total amount of data. These remaining peaks are for the leap years.
+
+## Weather models RACMO and KNW
+
+```{r}
+
+Cabauw_RACMO <- read.csv("../../../Data/Data_RACMO/fulldata.csv")
+Cabauw_RACMO$DateTime = ymd_hms(Cabauw_RACMO$DateTime)
+Cabauw_RACMO = Cabauw_RACMO[Cabauw_RACMO$Year > min(Cabauw_RACMO$Year) & Cabauw_RACMO$Year < max(Cabauw_RACMO$Year),]
+
+Cabauw_KNW <- read.csv("../../../Data/Data_KNW/modeldata.csv")
+Cabauw_KNW$DateTime = ymd_hms(Cabauw_KNW$DateTime)
+Cabauw_KNW$Year = year(Cabauw_KNW$Year)
+Cabauw_KNW = Cabauw_KNW[Cabauw_KNW$Year > min(Cabauw_KNW$Year) & Cabauw_KNW$Year < max(Cabauw_KNW$Year),]
+
+```
+
+### Sprectrum
+
+```{r}
+a = cbind(plot_spectrum(Cabauw_KNW,column = 'F010',spans=c(11,31))$spectrum_data,group = 'KNW')
+b = cbind(plot_spectrum(Cabauw_RACMO,column = 'w10m',spans=c(11,31))$spectrum_data,group='RACMO')
+c = cbind(plot_spectrum(Cabauw_measure,column = 'F010',spans=c(11,31))$spectrum_data,group='Measurements')
+df_plot = rbind(a,b,c)
+
+peak = data.frame(x=df_plot$Frequency[which.max(df_plot$Spectrum)])
+# print((1/peak)/24)
+
+ggplot(df_plot, aes(x=Frequency,y=Spectrum,color=factor(group)))+
+  geom_line(alpha=0.5) +
+  scale_y_log10() +
+  # geom_vline(data = peak,aes(xintercept=x),color='red',lty='dashed',alpha=0.5) +
+  scale_x_log10(limits = c(10^(-4),min(1,max(df_plot$Frequency))))+
+  labs(title = "Spectrum of Wind Speed Data at Cabauw",
+     x = "Frequency 1/hour",
+     y = "") +
+  theme_minimal()
+```
+
+**Consistent Peaks**: - Major periodic components like yearly and daily cycles are captured consistently across all datasets.
+
+### Distributions
+
+#### Whole datasets distributions
+
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+plot(ecdf(Cabauw_measure$F010),ylim = c(0,1),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of each whole dataset'))
+lines(ecdf(Cabauw_KNW$F010),col='blue')
+
+bm = BM_select(Cabauw_RACMO,height = 'w10m')
+lines(ecdf(Cabauw_RACMO$w10m),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+KNW and Measurements distributions fits well. However, we see that there are more greater values in RACMO than in KNW and Measurements.
+
+#### yearly Block Maxima distributions
+
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+bm = BM_select(Cabauw_measure)
+plot(ecdf(bm$max),ylim = c(0,1), xlim=c(13,26),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of BM for each dataset at Cabauw'))
+bm = BM_select(Cabauw_KNW)
+lines(ecdf(bm$max),col='blue')
+
+bm = BM_select(Cabauw_RACMO,height = "w10m")
+lines(ecdf(bm$max),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+The distribution of measurements' yearly maxima is a bit higher than the weather models. This can be explained by the fact that the models are smoothed in areas(2.5km \* 2.5km for KNW, 12km \* 12km for RACMO). The area is larger for RACMO so that's maybe why it is even smaller.
+
+#### Peak over Threshold Distributions
+
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+pot = PoTselect(Cabauw_measure$F010,p = 0.005,sep=6*12)$pot
+plot(ecdf(pot),ylim = c(0,1), xlim=c(10,26),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of PoT for each dataset, at Cabauw'))
+
+pot = PoTselect(Cabauw_KNW$F010,p = 0.005,sep=12)$pot
+lines(ecdf(pot),col='blue')
+
+
+pot = PoTselect(Cabauw_RACMO$w10m,p = 0.005,sep=4)$pot
+lines(ecdf(pot),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+This is the ECDF of 10% of peaks over threshold. We see approximately the same as for yearly maxima and can have the same conclusion about the values smoothed on areas.
+
+> We can also draw QQ-plots and PP-plots but it doesn't give more hints about the distributions.
+
+# Schiphol
+
+## Measurements
+
+```{r}
+data_Schiphol <- read.csv("../../../Data/Data_Schiphol/dataSchiphol.csv")
+data_Schiphol$DateTime = ymd_hms(data_Schiphol$DateTime)
+data_Schiphol = data_Schiphol[data_Schiphol$Year > min(data_Schiphol$Year) & data_Schiphol$Year < max(data_Schiphol$Year),]
+
+plot(sort(data_Schiphol$FF),type='l')
+
+print(paste("Unique wind speed values:",length(unique(data_Schiphol$FF))))
+hist(data_Schiphol$FF,breaks = 50)
+points(data_Schiphol$FF,rep(0,length(data_Schiphol$FF)))
+
+range(data_Schiphol$DateTime)
+
+```
+
+The previous plots show that the Schiphol wind speed measurements are very discretized, rounded off to the first decimal.
+
+```{r,results='hide'}
+pot = PoTselect_2(data_Schiphol$FF,0.1,12)
+
+# mw = find_max_window(data_Schiphol$FF,pot$ind,24*30)
+
+plot_extremes(pot,data_Schiphol,col='FF') #+ geom_point(data = data_Schiphol[pot1$ind, ], aes(colour = "PoT1"), size = 3,pch=7)
+```
+
+Because the peak selected are too discretized and the discretization is different before and after 2000, it leads to some problems when we estimate the tailindex.
+
+```{r,results='hide'}
+fit <- FitGP_MLE2(pot$pot, 1, N= 0, r11= 1, l0= round(10^(seq(-2.5, -0, 0.05))*length(pot$pot))-1, sigma= Inf, metadata= list(label='FF'))
+tailindexplot_2(list(fit))
+```
+
+### deal with discretization
+
+Because Schiphol data is very discretized, we have the idea of adding a little noise to the data to smooth the result of tail index estimation.
+
+We see that there are some steps so the values are discretized, if we look at the pot selection, the discretisation is even more visible. In addition, there is a change on the discretisation in 2000. After 2000, the values are even more discretised.
+
+To tackle this, we have the idea to add a noise to the data.
+
+$$
+ new\_data = data + noise
+$$ We can do so by using a Gaussian Noise or a uniform noise :
+
+#### Gaussian noise
+
+For the Gaussian noise, we can use a fraction of the standard deviation of the data.
+
+$$
+  noise \sim \mathcal{N}(0,\sigma) \text{, with } \sigma = sd(data)*0.1
+$$
+
+We have to set the negative values obtained by adding a too large negative noise to 0 because the wind can't be negative.
+
+```{r}
+sigma = sd(data_Schiphol$FF)*0.1
+data_Schiphol$FFGaussNoise = data_Schiphol$FF + rnorm(length(data_Schiphol$FF), mean = 0, sd = sigma)
+data_Schiphol$FFGaussNoise[data_Schiphol$FFGaussNoise<0] <- 0
+
+plot(sort(data_Schiphol$FFGaussNoise),type='l',seq(0,1,length.out=length(data_Schiphol$FFGaussNoise)),col='red', 
+     xlab = 'Wind Speed (m/s)', 
+     ylab = 'Probability',
+     main="Gaussian noise")
+
+# Add the second line
+lines(sort(data_Schiphol$FF), 
+      seq(0, 1, length.out = length(data_Schiphol$FF)), 
+      col = 'black')
+
+# Add a legend
+legend("bottomright", 
+       legend = c("wind speed with gaussian noise", "wind speed"), 
+       col = c("red", "black"), 
+       lty = 1)
+```
+
+It seems to smooth the data while preserving the trend so that's good. The estimated tail index may be a bit higher because the noise can introduce a little bias. We consider that this bias is negligible.
+
+#### Uniform noise
+
+For the uniform noise, we can take a noise that follows a uniform distribution of the maximum width between two values in the sorted sample and centered to 0. We also have to avoid negative values.
+
+$$
+  noise \sim \mathcal{U}([-a/2,a/2]) \text{, with } a = max(X_{i:n} - X_{i+1:n} \mid 1\leq i\leq n-1)
+$$
+
+```{r}
+I = max(diff(sort(data_Schiphol$FF)))
+
+data_Schiphol$FFUnifNoise = data_Schiphol$FF + runif(length(data_Schiphol$FF), min = -I/2, max = I/2)
+data_Schiphol$FFUnifNoise[data_Schiphol$FFUnifNoise<0] <- 0
+
+# Create the plot with labels
+plot(sort(data_Schiphol$FFUnifNoise), 
+     seq(0, 1, length.out = length(data_Schiphol$FFUnifNoise)), 
+     type = 'l', 
+     col = 'red', 
+     xlab = 'Wind Speed (m/s)', 
+     ylab = 'Probability',
+     main="Uniform noise")
+
+# Add the second line
+lines(sort(data_Schiphol$FF), 
+      seq(0, 1, length.out = length(data_Schiphol$FF)), 
+      col = 'black')
+
+# Add a legend
+legend("bottomright", 
+       legend = c("wind speed with uniform noise", "wind speed"), 
+       col = c("red", "black"), 
+       lty = 1)
+```
+
+the data are also smoothed and the trend is also preserved.
+
+We don't see much difference between the two smoothing so we can choose one of them to be used in the analysis. We have a preference for the uniform noise because it should more preserve the trend and order of the sorted data.
+
+```{r}
+pot = PoTselect_2(data_Schiphol$FFUnifNoise,0.1,12)
+
+# mw = find_max_window(data_Schiphol$FF,pot$ind,24*30)
+
+plot_extremes(pot,data_Schiphol,col='FFUnifNoise') #+ geom_point(data = data_Schiphol[pot1$ind, ], aes(colour = "PoT1"), size = 3,pch=7)
+```
+
+The peaks are now very spread and more representatives.
+
+```{r,results='hide'}
+tailindexplot_col(data_Schiphol,12,columns = c("FF","FFUnifNoise","FFGaussNoise"),method="GP",parameter = 'all',winter = T,fix_y = TRUE)
+```

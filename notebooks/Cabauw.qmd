@@ -1,0 +1,504 @@
+---
+title: "Extreme value analysis at Cabauw location"
+author: "Alexandre Tribut"
+date: July 25, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 8
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r,echo=FALSE}
+source('../tools.R')
+```
+
+```{r,echo=FALSE}
+Cabauw_measure <- read.csv("../../../Data/Data_Cabauw/Cabauw_measure.csv")
+Cabauw_measure$Year = year(Cabauw_measure$Year)
+Cabauw_measure$DateTime = ymd_hms(Cabauw_measure$DateTime)
+Cabauw_measure = Cabauw_measure[Cabauw_measure$Year > 2000 & Cabauw_measure$Year < 2020,]
+
+
+Cabauw_RACMO <- read.csv("../../../Data/Data_RACMO/fulldata.csv")
+Cabauw_RACMO$DateTime = ymd_hms(Cabauw_RACMO$DateTime)
+Cabauw_RACMO = Cabauw_RACMO[Cabauw_RACMO$Year > min(Cabauw_RACMO$Year) & Cabauw_RACMO$Year < max(Cabauw_RACMO$Year),]
+
+```
+
+# Stability plot
+
+## Generalized Pareto
+
+### Estimation of the storm threshold
+
+We estimate the tail index of 10m wind speed for different "storm thresholds", taking 40%, 30%, 20% or 10% of the highest wind.
+
+#### Measurements
+
+10min mean
+
+```{r,results='hide'}
+stabilityplot_col(Cabauw_measure,12*6,columns = c("F010","F010","F010","F010"),fraq_min = 2,fix_y = c(-0.25,0.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter=T)
+```
+
+#### Weather model
+
+```{r,results='hide'}
+stabilityplot_col(Cabauw_RACMO,4,columns = c("w10m","w10m","w10m","w10m"),fraq_min = 2.5,fix_y = c(-0.25,0.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter = T)
+```
+
+> Why truncate the dataset on only winter values ?
+
+The idea is that the distribution is more stationary over the winter season. With all-year, you have a mixture between less stormy summer weather and more stormy winter weather. The idea is that the tail would converge faster to a limiting shape than when you have a mixture of 2 tails (the heaviest tail will eventually dominate when the sample fraction tends to 0, but it takes longer than using already only the winter tail).
+
+> Regarding the `PoT.html` notebook, we can assume that taking 0.3 highest values of the whole dataset is correct.
+
+### Comparison between potential wind and normal wind at 10m with RACMO
+
+We compare the stability of the tail index estimation between potential wind 'p10m' and non-homogenized wind 'w10m' for both GP and GW distributions, with a storm threshold of 30% and only on winter wind.
+
+```{r,results='hide'}
+
+stability_est_GP(data_model = Cabauw_RACMO, data_measure = Cabauw_RACMO, col_model='p10m',col_measure='w10m', timestep_model=3,timestep_measure=3,fix_y = T, fraq_min = 2.7, parameter='all',overlap = T,peak_frac = 0.3,winter=T,label=c('p10m','w10m'))
+
+stability_est_GW(data_model = Cabauw_RACMO, data_measure = Cabauw_RACMO, col_model='p10m',col_measure='w10m', timestep_model=3,timestep_measure=3,fix_y = T, fraq_min = 2.7, parameter='all',overlap = T,peak_frac = 0.3,winter=T,label=c('p10m','w10m'))
+```
+
+The tail index estimation of potential wind and non-homogenized wind behave almost exactly the same. only the location parameter is significantly higher for potential wind.
+
+#### Potential wind with block maximum
+
+```{r}
+BM_TIplot(Cabauw_RACMO,Nbs = c(50),heights = c('p10m','w10m'),parameter = 'tail')
+BM_TIplot(Cabauw_RACMO,Nbs = c(50),heights = c('p10m','w10m'),parameter = 'scale')
+BM_TIplot(Cabauw_RACMO,Nbs = c(50),heights = c('p10m','w10m'),parameter = 'loc')
+```
+
+We find the same result for the GEV distribution with BM method.
+
+# Stability between heights
+
+We look at the stability of the estimation of the tail index for the GW distribution, at all the heights available in the datasets.
+
+## Measurements
+
+```{r,results='hide'}
+tim_h = stabilityplot_col(Cabauw_measure,12*6,columns = c("F010","F020","F040","F080","F140","F200"),fraq_min = 1.5,fix_y = T,parameter = 'tail',winter = T,method='GW')
+print(tim_h$gg)
+
+```
+
+Here we have the stability of 10 min mean wind speed for different heights. We see that the tail index behave almost the same for every height.
+
+```{r,results='hide'}
+tim_hx = stabilityplot_col(Cabauw_measure,12*6,columns = c("PF010","PF020","PF040","PF080","PF140","PF200"),fraq_min = 1.5,fix_y = T,parameter = 'tail',winter = T,method='GW')
+print(tim_hx$gg)
+
+```
+
+Here we have the stability of 3s gust wind speed for different heights. We see that the tail index behave almost the same for every height. And is similar than for 10min mean ws but a bit lower.
+
+We do the same for scale and location :
+
+```{r,results='hide'}
+sim_h = stabilityplot_col(Cabauw_measure,12*6,columns = c("F010","F020","F040","F080","F140","F200"),fraq_min = 1.5,fix_y = T,parameter = 'scale',winter = T,method='GW')
+print(sim_h$gg)
+
+```
+
+```{r,results='hide'}
+lim_h = stabilityplot_col(Cabauw_measure,12*6,columns = c("F010","F020","F040","F080","F140","F200"),fraq_min = 1.5,fix_y = T,parameter = 'loc',winter = T,method='GW')
+print(lim_h$gg)
+
+```
+
+The location is of course greater for the higher wind because the wind is globally higher. However, we see that the shape of the extremes behave the same.
+
+## RACMO
+
+We do the same analysis on height dependence for RACMO simulations.
+
+```{r,results='hide'}
+tic_h = stabilityplot_col(Cabauw_RACMO,4,columns = c("w10m","fh050","fh100","fh150","fh200","fh250","fh300"),fraq_min = 2.3,fix_y = T,parameter = 'tail',winter = T,method = "GW")
+
+print(tic_h$gg + theme(legend.position = "none"))
+
+```
+
+Here we have the stability of 3h sample wind speed for different heights. We see that the tail index behave almost the same for every height.
+
+```{r,results='hide'}
+tic_hx = stabilityplot_col(Cabauw_RACMO,4,columns = c("w10max","fhx050","fhx100","fhx150","fhx200","fhx250","fhx300"),fraq_min = 2.3,fix_y = T,parameter = 'tail',winter = T,method='GW')
+
+print(tic_hx$gg + theme(legend.position = "none"))
+
+
+```
+
+```{r,results='hide'}
+sic_h = stabilityplot_col(Cabauw_RACMO,4,columns = c("w10m","fh050","fh100","fh150","fh200","fh250","fh300"),fraq_min = 2.3,fix_y = T,parameter = 'scale',winter = T,method='GW')
+
+print(sic_h$gg + theme(legend.position = "none"))
+
+```
+
+```{r,results='hide'}
+lic_h = stabilityplot_col(Cabauw_RACMO,4,columns = c("w10m","fh050","fh100","fh150","fh200","fh250","fh300"),fraq_min = 2.3,fix_y = T,parameter = 'loc',winter = T,method='GW')
+
+print(lic_h$gg + theme(legend.position = "none"))
+
+```
+
+We find the same results than for the measurements.
+
+> the tail index doesn't seem to depend on the height of the wind.
+
+## Stability with tailindex from model
+
+#### Tail index similarity between model and measurements
+
+We check if the tail index is similar between the model and the measurements to see if it's ok to use the model to estimate the tail.
+
+```{r,results='hide'}
+stability_est_GP(data_model = Cabauw_RACMO, data_measure = Cabauw_measure, col_model='w10m',col_measure='F010', timestep_model=3,timestep_measure=1/6,fix_y = c(-0.4,0.2), parameter='tail',overlap = T,peak_frac = 0.3,winter = T)$gg  + geom_vline(xintercept = 0.1,lty='dashed')
+```
+
+#### Stability of scale estimation
+
+```{r,results='hide'}
+stability_est_GP(data_model = Cabauw_RACMO, data_measure = Cabauw_measure, col_model='w10m',col_measure='F010', timestep_model=3,timestep_measure=1/6,fix_y = T, parameter='scale',overlap = T,peak_frac = 0.3,winter = T,selected = 0.1)$gg + geom_vline(xintercept = 0.1,lty='dashed')
+```
+
+> Here, the conclusion is that we don't really have a good guess for a good threshold because the behaviour between RACMO and measurements are not really the same but what we can say is that the convergence of measurements seems to be reached at a threshold of 0.1 and estimation starts diverging after. Then we considere taking a threshold of 0.1
+
+### Is it that different if we take only 18y on RACMO ?
+
+Sample 18y in RACMO to see if we can have similar result than Cabauw measurements...
+
+```{r}
+yr_sample = sample(Cabauw_RACMO$Year,18,replace = FALSE)
+
+yr_index = which(Cabauw_RACMO$Year %in% yr_sample)
+
+new_data = Cabauw_RACMO[yr_index,]
+
+stability_est_GP(data_model = new_data, data_measure = Cabauw_measure, col_model='w10m',col_measure='F010', timestep_model=3,timestep_measure=1/6,fix_y = c(-0.4,0.2), parameter='tail',overlap = T,peak_frac = 0.3,winter = T)
+
+```
+
+> The result is really unstable and depends on the years selected. Sometimes it can fit with the measurements and sometimes it doesn't fit at all. This means that looking for a stable tail index (as a function of the sample fraction) makes no sense for the observations. **So it confirms our hypothesis that we have to rely on RACMO for a good estimate of the tail index**.
+
+### Interpolation and color plot for tail index
+
+#### Interpolation RACMO on all heights
+
+```{r,results='hide'}
+h = c(10,50,100,150,200,250,300)
+height_interp(tic_h,h,parameter = "RACMO tail index")
+```
+
+color plot to show the interpolation.
+
+#### Color plot with confidence
+
+```{r}
+h = c(10,50,100,150,200,250,300)
+height_heatmap(tic_h,h,"Tail index")
+height_heatmap(sic_h,h,"Scale")
+height_heatmap(lic_h,h,"Location")
+```
+
+Color plot for estimated tail index at all heights for RACMO data at Cabauw.
+
+#### Compare to measurements
+
+```{r}
+h <-  c(10,20,40,80,140,200)
+height_heatmap(tim_h,h,"Tail index")
+height_heatmap(sim_h,h,"Scale")
+height_heatmap(lim_h,h,"Location")
+```
+
+# Wind Speed Estimation with and without tail estimated with weather model
+
+We estimate the wind speed at 10 m with the non-homogenized wind speed simulation from RACMO and the observed 10 min mean wind speed. We use analytical uncertainties
+
+```{r,results='hide'}
+BM = WSEst_model_to_measure_BM_4(data_model = Cabauw_RACMO,data_measure = Cabauw_measure,col_model = "w10m",col_measure = "F010",length.out = 100,cov_type = "analytic")
+GP = WSEst_model_to_measure_GP_4(data_model = Cabauw_RACMO,data_measure = Cabauw_measure,col_model = "w10m",col_measure = "F010", timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1,length.out = 100,winter = T)
+GW = WSEst_model_to_measure_GW_2(data_model = Cabauw_RACMO,data_measure = Cabauw_measure,col_model = "w10m",col_measure = "F010", timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1,length.out = 100,winter = T)
+```
+
+## Generalized Extreme Value Distribution with Block Maxima Method
+
+```{r}
+print(BM$gg)
+
+
+# data_list = BM$parameter_distributions
+# df <- do.call(rbind, lapply(names(data_list), function(fit) do.call(rbind, lapply(names(data_list[[fit]]), function(param) data.frame(mean = data_list[[fit]][[param]]$mean, sd = data_list[[fit]][[param]]$sd, parameter = param, fit = fit)))))
+# 
+# plot_data <- do.call(rbind, lapply(1:nrow(df), function(i) {
+#   if (df$parameter[i] == "scale") {
+#     # Log transformation for scale parameter
+#     mean_val <- log(df$mean[i])
+#     sd_val <- df$sd[i]
+#   } else {
+#     mean_val <- df$mean[i]
+#     sd_val <- df$sd[i]
+#   }
+#   
+#   x <- seq(mean_val - 4 * sd_val, mean_val + 4 * sd_val, length.out = 100)
+#   y <- dnorm(x, mean = mean_val, sd = sd_val)
+#   
+#   data.frame(x = if (df$parameter[i] == "scale") exp(x) else x,  # Inverse log-transform for plotting
+#              y = y, 
+#              parameter = df$parameter[i], 
+#              fit = df$fit[i])
+# }))
+# # 
+# # Plot using ggplot2
+# ggplot(plot_data, aes(x = x, y = y, color = fit,lty=fit)) +
+#   geom_line(size = 1) +
+#   facet_wrap(~ parameter, scales = "free") +
+#   labs(title = "Normal Distribution of Parameters of GEV distribution",
+#        x = "Value", y = "Density") +
+#   scale_color_discrete(name = "Estimated on",
+#                        labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   scale_linetype_discrete(name = "Estimated on",
+#                           labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   theme_minimal()
+```
+
+## Generalized Pareto Distribution with Peak over Threshold Method
+
+```{r}
+print(GP$gg)
+# 
+# 
+# data_list = GP$parameter_distributions
+# df <- do.call(rbind, lapply(names(data_list), function(fit) do.call(rbind, lapply(names(data_list[[fit]]), function(param) data.frame(mean = data_list[[fit]][[param]]$mean, sd = data_list[[fit]][[param]]$sd, parameter = param, fit = fit)))))
+# 
+# # df
+# 
+# plot_data <- do.call(rbind, lapply(1:nrow(df), function(i) {
+#   if (df$parameter[i] == "scale") {
+#     # Log transformation for scale parameter
+#     mean_val <- log(df$mean[i])
+#     sd_val <- df$sd[i]
+#   } else {
+#     mean_val <- df$mean[i]
+#     sd_val <- df$sd[i]
+#   }
+#   
+#   x <- seq(mean_val - 4 * sd_val, mean_val + 4 * sd_val, length.out = 100)
+#   y <- dnorm(x, mean = mean_val, sd = sd_val)
+#   
+#   data.frame(x = if (df$parameter[i] == "scale") exp(x) else x,  # Inverse log-transform for plotting
+#              y = y, 
+#              parameter = df$parameter[i], 
+#              fit = df$fit[i])
+# }))
+# 
+# # Plot using ggplot2
+# ggplot(plot_data, aes(x = x, y = y, color = fit,lty=fit)) +
+#   geom_line(size = 1) +
+#   facet_wrap(~ parameter, scales = "free") +
+#   labs(title = "Normal Distribution of Parameters of GP distribution",
+#        x = "Value", y = "Density") +
+#   scale_color_discrete(name = "Estimated on",
+#                        labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   scale_linetype_discrete(name = "Estimated on",
+#                           labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   theme_minimal()
+```
+
+## Generalized Weibull Distribution with Peak over Threshold Method
+
+```{r}
+print(GW$gg)
+# 
+# data_list = GW$parameter_distributions
+# df <- do.call(rbind, lapply(names(data_list), function(fit) do.call(rbind, lapply(names(data_list[[fit]]), function(param) data.frame(mean = data_list[[fit]][[param]]$mean, sd = data_list[[fit]][[param]]$sd, parameter = param, fit = fit)))))
+# 
+# plot_data <- do.call(rbind, lapply(1:nrow(df), function(i) {
+#   if (df$parameter[i] == "scale") {
+#     # Log transformation for scale parameter
+#     mean_val <- log(df$mean[i])
+#     sd_val <- df$sd[i]
+#   } else {
+#     mean_val <- df$mean[i]
+#     sd_val <- df$sd[i]
+#   }
+#   
+#   x <- seq(mean_val - 4 * sd_val, mean_val + 4 * sd_val, length.out = 100)
+#   y <- dnorm(x, mean = mean_val, sd = sd_val)
+#   
+#   data.frame(x = if (df$parameter[i] == "scale") exp(x) else x,  # Inverse log-transform for plotting
+#              y = y, 
+#              parameter = df$parameter[i], 
+#              fit = df$fit[i])
+# }))
+# 
+# # Plot using ggplot2
+# ggplot(plot_data, aes(x = x, y = y, color = fit,lty=fit)) +
+#   geom_line(size = 1) +
+#   facet_wrap(~ parameter, scales = "free") +
+#   labs(title = "Normal Distribution of Parameters of GW distribution",
+#        x = "Value", y = "Density") +
+#   scale_color_discrete(name = "Estimated on",
+#                        labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   scale_linetype_discrete(name = "Estimated on",
+#                           labels = c("Measurement", "Model tail + measurements", "Weather model")) +
+#   theme_minimal()
+# 
+# GW
+```
+
+# Models Comparison
+
+```{r}
+# Extrapolation of the wind with tail index fixed to Gumbel (0 or 1 for GW)
+# tail0_BM = WSEst_model_to_measure_BM_4(NULL,Cabauw_measure,NULL,"F010",fixtailto0 = T,length.out = 0,cov_type = "analytic")$df 
+tail0_BM = WSEst_model_to_measure_BM(NULL,Cabauw_measure,NULL,"F010",Nb_model = 1,Nb_measure = 100,fixtailto0 = T,length.out = 0)$df # BM/GEV extrapolation, analytic uncertainties were not realistic/very big,
+                                                                                                                                     # probably because we don't have enough years
+tail0_BM = tail0_BM[,c("return","model_est","lb","ub","sd")] # formatting
+names(tail0_BM) = c("return","original","lb","ub","sd") # formatting
+
+
+tail0_GP = WSEst_GP_4(Cabauw_measure,1/6,threshold = 0.1,col = "F010",fixtailto0 = T,length.out = 0,winter=T)$df # PoT/GP extrapolation
+tail0_GW = WSEst_GW_2(Cabauw_measure,1/6,threshold = 0.1,col = "F010",fixtailto1 = T,length.out = 0,winter=T)$df # PoT/GW extrapolation
+
+tail0 = rbind(cbind(tail0_BM,distrib='GEV'),cbind(tail0_GP,distrib='GP'),cbind(tail0_GW,distrib='GW')) # combine all extrapolation from the different distribution
+tail0$distrib_num <- as.numeric(factor(tail0$distrib, levels = c('GEV', 'GP', 'GW'))) # formatting
+
+
+
+
+df_plot <- rbind(cbind(BM$df,distrib='GEV'),cbind(GP$df,distrib='GP'),cbind(GW$df,distrib='GW')) # combine results from all the distributions for RACMO tail and observation tail.
+
+# get the return values for the return periods 50, 100, 1000 and 10000
+i50 <- df_plot %>% 
+    slice(which(abs(return - 50)==0))
+
+i100 <- df_plot %>% 
+    slice(which(abs(return - 100)==0))
+
+i1000 <- df_plot %>% 
+    slice(which(abs(return - 1000)==0))
+
+i10000 <- df_plot %>% 
+    slice(which(abs(return - 10000)==0))
+
+df_plot <- rbind(i50,i100,i1000,i10000) # combine
+
+df_plot$distrib_num <- as.numeric(factor(df_plot$distrib, levels = c('GEV', 'GP', 'GW'))) # add index for the distribution for the plot
+
+
+# format the data-frame for the plot and add some legend
+original = cbind(df_plot[c('return',"original",'lb_o','ub_o','sd_o',"distrib","distrib_num")],group = 'All parameters estimated from measurements')
+model_est = cbind(df_plot[c('return',"model_est",'lb','ub','sd',"distrib","distrib_num")],group = 'Tail index estimated with RACMO')
+tail0 = cbind(tail0,group = 'Tail index fixed to Gumbel')
+
+colnames(original)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+colnames(model_est)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+colnames(tail0)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+
+df_plot  = rbind(original,model_est,tail0)
+
+
+
+# Plot with vertical dodge
+ggplot(df_plot, aes(y = distrib_num,colour = group)) +
+  facet_wrap(~return, scales = "fixed") +
+  geom_pointrange(aes(x = val, xmin = lb, xmax = ub),
+                  size = 0.2,
+                  position = ggstance::position_dodge2v(0.3)) +
+  scale_y_continuous(breaks = 1:3, labels = c('GEV', 'GP', 'GW')) +
+  labs(x = 'Wind speed (m/s)', y = 'Distribution', color = 'Legend') +
+  theme(legend.position = "bottom")+
+  xlim(c(15,55))+
+  guides(colour = guide_legend(nrow = 2))
+
+```
+
+```{r,eval=FALSE,echo=FALSE}
+# to present the result
+
+formatted_df = df_plot[,c('return','distrib','group','val','lb','ub')] %>%
+  arrange(return, distrib, group) %>%
+  group_by(return, distrib) %>%
+  mutate(across(c(val, lb, ub), ~ round(., 2))) %>%
+  ungroup()
+
+```
+
+# Save results for matlab
+
+```{r,eval=FALSE}
+# out <- as.list(BM$df[c('return','proba','original','sd_o','model_est','sd')])
+# out$points <- BM$points
+# out$timedelta <- 1
+# writeMat("../../../DATA_for_Laurine/GEV_Cabauw_est.mat", GEV_est = out)
+# 
+# out <- as.list(GP$df[c('return','proba','original','sd_o','model_est','sd')])
+# out$points <- GP$points
+# out$timedelta <- GP$timestep
+# writeMat("../../../DATA_for_Laurine/GP_Cabauw_est.mat", GP_est = out)
+# 
+# out <- as.list(GW$df[c('return','proba','original','sd_o','model_est','sd')])
+# out$points <- GW$points
+# out$timedelta <- GW$timestep
+# writeMat("../../../DATA_for_Laurine/GW_Cabauw_est.mat", GW_est = out)
+```
+
+# Errors between distributions
+
+```{r,echo=FALSE,eval=FALSE}
+errors_in = data.frame(rbind(rbind(apply(abs(tail0_BM[,2:4]-BM$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_BM[,2:4]-BM$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(BM$df[,c('original','lb_o','ub_o')]-BM$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(tail0_GP[,2:4]-GP$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_GP[,2:4]-GP$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GP$df[,c('original','lb_o','ub_o')]-GP$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(tail0_GW[,2:4]-GW$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_GW[,2:4]-GW$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GW$df[,c('original','lb_o','ub_o')]-GW$df[,c('model_est','lb','ub')]),1,mean))))
+
+colnames(errors_in) <- BM$df$return
+errors_in$error_tail <- rep(c("Gumbel - RACMO","Gumbel - Measurements","Measurements - RACMO"),3)
+errors_in$distrib <- rep(c("GEV","GP","GW"),each=3)
+errors_in <- errors_in %>% mutate_if(is.numeric,round, digit=2) 
+errors_in
+
+
+
+
+
+errors_out = data.frame(rbind(rbind(apply(abs(tail0_BM[,2:4]-tail0_GP[,2:4]),1,mean),
+apply(abs(tail0_BM[,2:4]-tail0_GW[,2:4]) ,1,mean),
+apply(abs(tail0_GP[,2:4]-tail0_GW[,2:4]),1,mean)),
+
+rbind(apply(abs(BM$df[,c('model_est','lb','ub')]-GP$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(BM$df[,c('model_est','lb','ub')]-GW$df[,c('model_est','lb','ub')]) ,1,mean),
+apply(abs(GW$df[,c('model_est','lb','ub')]-GP$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(BM$df[,c('original','lb_o','ub_o')]-GP$df[,c('original','lb_o','ub_o')]),1,mean),
+apply(abs(BM$df[,c('original','lb_o','ub_o')]-GW$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GP$df[,c('original','lb_o','ub_o')]-GW$df[,c('original','lb_o','ub_o')]),1,mean))))
+
+colnames(errors_out) <- BM$df$return
+errors_out$error_distrib <- rep(c("GEV - GP","GEV - GW","GP - GW"),3)
+errors_out$tail <- rep(c("Gumbel","RACMO","Measurements"),each=3)
+errors_out <- errors_out %>% mutate_if(is.numeric,round, digit=2) 
+errors_out
+
+```

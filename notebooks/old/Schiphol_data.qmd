@@ -1,0 +1,339 @@
+---
+title: "Analysis of the dataset at Schiphol location"
+author: "Alexandre Tribut"
+date: July 9, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+
+
+
+```{r,echo=FALSE}
+source('../tools.R')
+```
+```{r,echo=FALSE}
+data_Schiphol <- read.csv("../../../Data/Data_Schiphol/dataSchiphol.csv")
+data_Schiphol$DateTime = ymd_hms(data_Schiphol$DateTime)
+data_Schiphol = data_Schiphol[data_Schiphol$Year > min(data_Schiphol$Year) & data_Schiphol$Year < max(data_Schiphol$Year),]
+
+
+RACMO_Schiphol <- read.csv("../../../Data/Data_RACMO/Schiphol/RACMO_Schiphol.csv")
+RACMO_Schiphol$DateTime = ymd_hms(RACMO_Schiphol$DateTime)
+RACMO_Schiphol = RACMO_Schiphol[RACMO_Schiphol$Year > min(RACMO_Schiphol$Year) & RACMO_Schiphol$Year < max(RACMO_Schiphol$Year),]
+```
+
+
+
+
+```{r}
+tailindexplot_all_heights(data_Schiphol,1,method="GW",fix_y = TRUE)
+
+pot = PoTselect_2(data_Schiphol$FF,0.1,12)
+pot1 = PoTselect(data_Schiphol$FF,0.1,12)
+
+
+# mw = find_max_window(data_Schiphol$FF,pot$ind,24*30)
+
+plot_extremes(pot,data_Schiphol,col='FF') #+ geom_point(data = data_Schiphol[pot1$ind, ], aes(colour = "PoT1"), size = 3,pch=7)
+
+plot(sort(data_Schiphol$FF),type='l')
+```
+
+
+
+
+
+
+
+```{r}
+length(unique(data_Schiphol$FF))
+hist(data_Schiphol$FF,breaks = 150)
+points(data_Schiphol$FF,rep(0,length(data_Schiphol$FF)))
+
+plot(ecdf(data_Schiphol$FF))
+```
+
+
+
+# deal with discretization
+
+Because Schiphol data is very discretized, we had the idea of adding a little noise to the data to smooth the result of tail index estimation
+
+```{r}
+plot(sort(data_Schiphol$FF),type='l',seq(0,1,length.out=length(data_Schiphol$FF)))
+```
+
+We see that there are some steps so the values are discretized, if we look at the pot selection, the discretisation is even more visible. In addition, there is a change on the discretisation in 2000. After 2000, the values are even more discretised. 
+
+
+To counter this, we have the idea to add a noise to the data.
+
+$$
+ new\_data = data + noise
+$$
+We can do so by using a Gaussian Noise or a uniform noise :
+
+For the Gaussian noise, we can use a fraction of the standard deviation of the data. 
+
+$$
+  noise \sim \mathcal{N}(0,\sigma) \text{, with } \sigma = sd(data)*0.1
+$$
+
+We have to set the negative values obtained by adding a too large negative noise to 0 because the wind can't be negative.
+
+```{r}
+sigma = sd(data_Schiphol$FF)*0.1
+data_Schiphol$FFGaussNoise = data_Schiphol$FF + rnorm(length(data_Schiphol$FF), mean = 0, sd = sigma)
+data_Schiphol$FFGaussNoise[data_Schiphol$FFGaussNoise<0] <- 0
+
+plot(sort(data_Schiphol$FFGaussNoise),type='l',seq(0,1,length.out=length(data_Schiphol$FFGaussNoise)),col='red')
+lines(sort(data_Schiphol$FF),seq(0,1,length.out=length(data_Schiphol$FFGaussNoise)))
+```
+
+It seems to smooth the data while preserving the trend so that's good. The estimated tail index may be a bit higher because the noise can introduce a little bias. We consider that this bias is negligible.
+
+
+
+For the uniform noise, we can take a noise that follows a uniform distribution of the width between two values in the sample and centered to 0.
+We also have to avoid negative values.
+
+$$
+  noise_i \sim \mathcal{U}(I_i) \text{, with } I_i = [X_{i-1:n} - X_{i:n}, X_{i+1:n} - X_{i:n}]*0.6
+$$
+(idea)
+
+or more simple :
+$$
+  noise \sim \mathcal{U}([-a/2,a/2]) \text{, with } a = max(X_{i:n} - X_{i+1:n} \mid 1\leq i\leq n-1)
+$$
+
+```{r}
+I = max(diff(sort(data_Schiphol$FF)))
+
+data_Schiphol$FFUnifNoise = data_Schiphol$FF + runif(length(data_Schiphol$FF), min = -I/2, max = I/2)
+data_Schiphol$FFUnifNoise[data_Schiphol$FFUnifNoise<0] <- 0
+
+plot(sort(data_Schiphol$FFUnifNoise),type='l',seq(0,1,length.out=length(data_Schiphol$FFUnifNoise)),col='red')
+lines(sort(data_Schiphol$FF),seq(0,1,length.out=length(data_Schiphol$FFUnifNoise)))
+```
+
+
+
+
+```{r,results='hide'}
+
+tailindexplot_all_heights(data_Schiphol,1,method="GW",fix_y = T)
+
+```
+
+We see that the Gaussian noise smooth more the estimation than the uniform noise
+
+
+# Stability for estimations
+
+```{r,results='hide'}
+stability_est_GP(RACMO_Schiphol,data_Schiphol,'F010','FFGaussNoise',3,1)
+```
+
+
+
+# Wind Speed estimation for Schipol location
+
+
+```{r}
+WSEst_model_to_measure_BM_2(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFGaussNoise", Nb_model = 100,Nb_measure = 100)$gg
+
+WSEst_model_to_measure_GP_2(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFGaussNoise",timestep_model = 3,timestep_measure = 1,th_model = 0.1,th_measure = 0.1)$gg
+
+WSEst_model_to_measure_GW_2(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFGaussNoise",timestep_model = 3,timestep_measure = 1,th_model = 0.1,th_measure = 0.1)$gg
+```
+
+
+
+
+<!-- test -->
+{
+<!-- # test equivalence GP GW -->
+
+
+
+<!-- ```{r} -->
+<!-- pot <- PoTselect_2(data_RACMO$w10m,0.1,4) -->
+
+<!-- l0 <- round(10^(seq(-2.3,0,0.05))*length(pot$pot))-1 -->
+<!-- fit_gp <- FitGP_MLE2(pot$pot, 1, N= 0, r11= 1, l0= l0,metadata = list(label = "GP")) -->
+<!-- fit_gw <- FitGW_iHilli(pot$pot, 1, N= 0, r11= 1, l0= l0,metadata = list(label = "GW")) -->
+
+<!-- taileq <- fit_gp -->
+<!-- taileq$tailindex <- (taileq$y + 2)*taileq$tailindex + 1 -->
+<!-- taileq$tailindexStd <- (taileq$y + 2)*taileq$tailindexStd -->
+<!-- taileq$metadata <- list(label = "GW eq") -->
+
+<!-- tailindexplot_2(list(fit_gp,fit_gw,taileq)) -->
+
+
+<!-- sqrt(sum((fit_gw$tailindex - taileq$tailindex)^2)) -->
+
+
+
+<!-- ``` -->
+
+
+
+
+
+<!-- # Quantile estimation -->
+
+<!-- On test si il y a une difference entre l'estimation faite grace a la fonction de EVTools et l'estimation faite avec les distribution à part. On regarde aussi si les intervalles de confiance sont différents. -->
+
+
+
+
+
+<!-- ```{r} -->
+<!-- data_model <- RACMO_Schiphol -->
+<!-- data_measure <- data_Schiphol -->
+<!-- # data_measure -->
+<!-- col_model='F010' -->
+<!-- col_measure='FFnoise' -->
+<!-- timestep_model=3 -->
+<!-- timestep_measure=1 -->
+<!-- th_model=0.1 -->
+<!-- th_measure=0.1 -->
+
+<!-- pot_model <- PoTselect(data_model[[col_model]],0.1,12/timestep_model) -->
+<!-- l0_model <- round(th_model*length(pot_model$pot))-1 -->
+<!-- fit_model <- FitGP_MLE2(pot_model$pot, 1, N= nrow(data_model), r11= 1, l0= l0_model) -->
+
+
+
+
+<!-- # Function to constrain the tail index parameter in the estimation -->
+<!-- fixedpar = list(gamma0 = fit_model$tailindex,gamma0Std = fit_model$tailindexStd) -->
+
+<!-- # Compute scale and loc for original and tail_index model estimated -->
+
+
+<!-- pot_measure <- PoTselect(data_measure[[col_measure]],0.1,12/timestep_measure) -->
+<!-- print(sum(is.na(pot_measure$pot))) -->
+<!-- l0_measure <- round(th_measure*length(pot_measure$pot))-1 -->
+
+<!-- # mean timestep for POT select on measurements -->
+<!-- timestep_POT_measure <- mean(diff(pot_measure$ind)*timestep_measure/(24*365.2425)) # mean of the timediff between each peak -->
+
+<!-- # Return periods -->
+<!-- X <- 10^seq(log10(timestep_POT_measure*length(pot_measure$pot)/l0_measure), log10(10000), length.out = 30) -->
+
+<!-- p_measure = timestep_POT_measure/X -->
+
+
+<!-- fit_measure <- FitGP_MLE2(pot_measure$pot, p_measure, N= nrow(data_measure), r11= 1, l0= l0_measure) -->
+<!-- fit_measure_model <- FitGP_MLE2(pot_measure$pot, p_measure, N= nrow(data_measure),fixedpar = fixedpar, r11= 1, l0= l0_measure) -->
+
+<!-- # plot ECDFs -->
+<!-- xrange = c(min(c(-sort(-pot_measure$pot)[l0_measure],-sort(-pot_model$pot)[l0_model])),max(c(pot_measure$pot,pot_model$pot))) -->
+<!-- xspan = seq(xrange[1],xrange[2],length.out=100) -->
+
+
+
+<!-- print(paste('Model estimation : tail =',fit_model$tailindex,'sd',fit_model$tailindexStd,'scale =',fit_model$scale,' loc =',fit_model$location)) -->
+<!-- # measurement original estimation -->
+<!-- loc = list(mean = fit_measure$location, sd = fit_measure$locationStd) -->
+<!-- scale = list(mean = fit_measure$scale, sd = fit_measure$logdispStd) -->
+<!-- tail = list(mean = fit_measure$tailindex, sd = fit_measure$tailindexStd) -->
+<!-- print(paste('Original estimation : tail =',tail$mean,'sd',tail$sd,'scale =',scale$mean,' loc =',loc$mean)) -->
+
+<!-- measure_est = list(mean = c(fit_measure$quantile),lb = c(fit_measure$quantile) - qnorm(0.975)*c(fit_measure$quantileStd), ub = c(fit_measure$quantile) + qnorm(0.975)*c(fit_measure$quantileStd)) -->
+
+
+<!-- df_measure <- data.frame( -->
+<!--   return = X, -->
+<!--   original = measure_est$mean, -->
+<!--   lb = measure_est$lb, -->
+<!--   ub = measure_est$ub -->
+<!-- ) -->
+
+
+<!-- # Estimate return values using the model-estimated tail index -->
+<!-- loc = list(mean = fit_measure_model$location, sd = fit_measure_model$locationStd) -->
+<!-- scale = list(mean = fit_measure_model$scale, sd = fit_measure_model$logdispStd) -->
+<!-- tail = list(mean = fit_measure_model$tailindex, sd = fit_measure_model$tailindexStd) -->
+<!-- print(paste('Measurements + Model estimation : tail =',tail$mean,'sd',tail$sd,'scale =',scale$mean,' loc =',loc$mean)) -->
+
+<!-- model_est <- list(mean = c(fit_measure_model$quantile),lb = c(fit_measure_model$quantile) - qnorm(0.975)*c(fit_measure_model$quantileStd), ub = c(fit_measure_model$quantile) + qnorm(0.975)*c(fit_measure_model$quantileStd)) -->
+
+
+
+<!-- # Create a data frame for plotting -->
+<!-- df <- data.frame( -->
+<!--   return = X, -->
+<!--   original = df_measure$original, -->
+<!--   model_est = model_est$mean, -->
+<!--   lb = model_est$lb, -->
+<!--   ub = model_est$ub -->
+<!-- ) -->
+
+
+<!-- # Create a data frame for observed values -->
+
+<!-- points <- data.frame(speed = sort(pot_measure$pot)) -->
+<!-- points$p <- seq(0,1-1/length(points$speed),length.out=length(points$speed))     # observed Values -->
+<!-- points$used <- 1-points$p <= l0_measure/length(pot_measure$pot) -->
+<!-- points$return <-  timestep_POT_measure / (1- points$p) -->
+
+
+
+
+<!-- # Create the ggplot -->
+<!-- custom_color <- "blue" -->
+
+<!-- gg <- ggplot(df, aes(x = return)) + -->
+<!--   geom_line(aes(y = model_est, color = 'shape estimated with model')) + -->
+<!--   geom_ribbon(aes(ymin = lb, ymax = ub, fill = 'Confidence Interval, 95%'), alpha = 0.2) + -->
+<!--   geom_point(data = points, aes(y = speed, color=used,shape = 'Measurements observed')) + -->
+<!--   geom_line(data = df_measure, aes(y = original, color = 'all parameters estimated\nfrom measurements')) + -->
+<!--   geom_line(data = df_measure, aes(y = lb), lty = 'dashed', color = "red") + -->
+<!--   geom_line(data = df_measure, aes(y = ub), lty = 'dashed', color = "red") + -->
+<!--   scale_x_log10(labels = scales::comma) + -->
+<!--   ylim(range(c(df$original, df$model_est, df$lb, df$ub, points$speed))) + -->
+<!--   labs(x = 'Return Period (years)', y = 'Return Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years,\nPoT, GP, on measurements')) + -->
+<!--   scale_color_manual(values = c('shape estimated with model' = custom_color, 'all parameters estimated\nfrom measurements' = 'red','TRUE'='black','FALSE'='lightgrey')) + -->
+<!--   scale_fill_manual(values = c('Confidence Interval, 95%' = custom_color)) + -->
+<!--   theme(legend.position = "right") -->
+
+<!-- last_values <- tail(df, 1)  # Get the last row of df_measure -->
+<!-- print(last_values) -->
+<!-- # Annotate the last values -->
+<!-- gg <- gg + -->
+<!--   geom_text(data = last_values, aes(label = sprintf("%.2f", original),  -->
+<!--                                     x = max(df$return), y = original ),  -->
+<!--             color = 'red', size = 3, hjust = 0) + -->
+<!--   geom_text(data = last_values, aes(label = sprintf("%.2f", model_est),  -->
+<!--                                     x = max(df$return), y = model_est),  -->
+<!--             color = custom_color, size = 3, hjust = 0) + -->
+<!--   geom_text(data = last_values, aes(label = sprintf("%.2f", lb),  -->
+<!--                                     x = max(df$return), y = lb),  -->
+<!--             color = custom_color, size = 3, hjust = 0) + -->
+<!--   geom_text(data = last_values, aes(label = sprintf("%.2f", ub),  -->
+<!--                                     x = max(df$return), y = ub),  -->
+<!--             color = custom_color, size = 3, hjust = 0) -->
+
+<!-- gg -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- WSEst_model_to_measure_GP(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "w10m",col_measure = "F010",timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1) -->
+
+<!-- ``` -->
+
+}

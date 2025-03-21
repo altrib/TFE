@@ -1,0 +1,918 @@
+---
+title: "Analysis of the RACMO dataset"
+author: "Alxandre Tribut"
+date: June 18, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r}
+#| echo: false
+source('../tools.R')
+
+```
+
+# Import datasets
+
+```{r}
+source("../import_data.R")
+```
+
+# plot spectra
+
+```{r}
+
+
+a = cbind(plot_spectrum(data_KNW,column = 'F010',spans=c(11,31))$spectrum_data,group = 'KNW')
+b = cbind(plot_spectrum(RACMO_Cabauw,column = 'w10m',spans=c(11,31))$spectrum_data,group='RACMO')
+c = cbind(plot_spectrum(data_Cabauw,column = 'F010',spans=c(11,31))$spectrum_data,group='Measurements')
+df_plot = rbind(a,b,c)
+
+peak = data.frame(x=df_plot$Frequency[which.max(df_plot$Spectrum)])
+# print((1/peak)/24)
+
+ggplot(df_plot, aes(x=Frequency,y=Spectrum,color=factor(group)))+
+  geom_line(alpha=0.5) +
+  scale_y_log10() +
+  # geom_vline(data = peak,aes(xintercept=x),color='red',lty='dashed',alpha=0.5) +
+  scale_x_log10(limits = c(10^(-4),min(1,max(df_plot$Frequency))))+
+  labs(title = "Spectrum of Wind Speed Data",
+     x = "Frequency 1/hour",
+     y = "") +
+  theme_minimal()
+
+# ggplot(df_plot, aes(x=Frequency,y=Spectrum,color=factor(group)))+
+#   geom_line(alpha=0.5) +
+#   scale_y_log10() +
+#   # geom_vline(data = peak,aes(xintercept=x),color='red',lty='dashed',alpha=0.5) +
+#   scale_x_continuous(limits = c(10^(-4),min(1,max(df_plot$Frequency))))+
+#   labs(title = "Spectrum of Wind Speed Data",
+#      x = "Frequency 1/hour",
+#      y = "") +
+#   theme_minimal()
+
+```
+
+
+### Observations:
+
+1. **Consistent Peaks**:
+   - Major periodic components like yearly and daily cycles are captured consistently across all datasets.
+
+<!-- 2. **Wide Spectra**: -->
+<!--    - Significant power is spread across a range of frequencies, indicating high variability and possibly noise. -->
+
+<!-- 3. **Comparative Analysis**: -->
+<!--    - **RACMO Spectrum (3-hour sampling over 1000 years)**: Widest spectrum, capturing the broadest range of frequencies, including long-term variability. -->
+<!--    - **KNW Spectrum (1-hour sampling over 40 years)**: Less power in high-frequency range compared to Measurements, but covers a broad range of frequencies. -->
+<!--    - **Measurements Spectrum (10-minute mean over 20 years)**: Captures the most detailed variability due to high temporal resolution. -->
+
+<!-- ### Interpretation: -->
+
+<!-- 1. **Major Peaks Consistency**: -->
+<!--    - All datasets consistently capture key periodicities like daily and seasonal cycles. -->
+
+<!-- 2. **Wide Spectra and Variability**: -->
+<!--    - Indicates significant variability at multiple frequencies due to both short-term and long-term influences on wind speed. -->
+
+<!-- 3. **RACMO Spectrum**: -->
+<!--    - Captures long-term trends and rare events with comparable overall power to Measurements but less detail in high-frequency variability. -->
+
+<!-- 4. **KNW Spectrum**: -->
+<!--    - Reflects significant variability with a broad frequency range but less detailed than Measurements. -->
+
+<!-- 5. **Measurements Spectrum**: -->
+<!--    - High temporal resolution captures more short-term wind speed fluctuations, showing higher power at high frequencies. But not very wide range. -->
+
+```{r,echo=FALSE,eval=FALSE}
+
+
+a = cbind(plot_spectrum(data_KNW_3h)$spectrum_data,group = 'KNW 3h average')
+b = cbind(plot_spectrum(RACMO_Cabauw,column = 'w10m')$spectrum_data,group='RACMO')
+c = cbind(plot_spectrum(data_Cabauw_3h,column = 'F010')$spectrum_data,group='Measurements 3h average')
+df_plot = rbind(a,b,c)
+
+peak = data.frame(x=df_plot$Frequency[which.max(df_plot$Spectrum)])
+# print((1/peak)/24)
+
+ggplot(df_plot, aes(x=Frequency,y=Spectrum,color=factor(group)))+
+  geom_line(alpha=0.5) +
+  scale_y_log10() +
+  # geom_vline(data = peak,aes(xintercept=x),color='red',lty='dashed',alpha=0.5) +
+  scale_x_log10(limits = c(10^(-4),min(1,max(df_plot$Frequency))))+
+  labs(title = "Spectrum of Wind Speed Data",
+     x = "Frequency 1/hour",
+     y = "") +
+  theme_minimal()
+
+ggplot(df_plot, aes(x=Frequency,y=Spectrum,color=factor(group)))+
+  geom_line(alpha=0.5) +
+  scale_y_log10() +
+  # geom_vline(data = peak,aes(xintercept=x),color='red',lty='dashed',alpha=0.5) +
+  scale_x_continuous(limits = c(10^(-4),min(1,max(df_plot$Frequency))))+
+  labs(title = "Spectrum of Wind Speed Data",
+     x = "Frequency 1/hour",
+     y = "") +
+  theme_minimal()
+
+```
+
+# Comparing the distributions
+
+## QQ and PP plots
+
+```{r}
+# Q-Q plot to compare data1 and data2
+qqplot(data_KNW$F010, data_Cabauw$F010, main = "Q-Q Plot of KNW vs Measurements",
+       xlab = "Quantiles of KNW", ylab = "Quantiles of Measurements")
+abline(0, 1, col = "red")  # Adds a reference line y=x
+
+
+labs = list(xlab = "Empirical CDF of KNW",
+            ylab = "Empirical CDF of Measurements",
+            main = "P-P Plot of KNW vs Measurements")
+
+pp_plot_compare(data_KNW$F010, data_Cabauw$F010, labs=labs)
+```
+
+The PP-plot tells us that the two datasets seems to have the same distribution. However, the QQ-plot shows that the measurements dataset has an heavier tail than the KNW model dataset, this will affect the estimation of the tailindex.
+
+```{r}
+# Q-Q plot to compare data1 and data2
+qqplot(RACMO_Cabauw$w10m, data_Cabauw$F010, main = "Q-Q Plot of RACMO vs Measurements",
+       xlab = "Quantiles of RACMO", ylab = "Quantiles of Measurements")
+abline(0, 1, col = "red")  # Adds a reference line y=x
+
+
+labs = list(xlab = "Empirical CDF of RACMO", 
+            ylab = "Empirical CDF of Measurements", 
+            main = "P-P Plot of RACMO vs Measurements")
+
+pp_plot_compare(RACMO_Cabauw$w10m, data_Cabauw$F010, labs=labs)
+```
+
+The PP-plot line is above the first bisector and the deviation is greater for small probabilities, indicating that the measurements dataset contains more small values. This is confirmed by the QQ-plot. On the other hand, the QQ-plot tells us that the measurements and the RACMO dataset have quiet similar tails.
+
+```{r}
+# Q-Q plot to compare data1 and data2
+qqplot(RACMO_Cabauw$w10m, data_KNW$F010, main = "Q-Q Plot of RACMO vs KNW",
+       xlab = "Quantiles of RACMO", ylab = "Quantiles of KNW")
+abline(0, 1, col = "red")  # Adds a reference line y=x
+
+
+labs = list(xlab = "Empirical CDF of RACMO", 
+            ylab = "Empirical CDF of KNW", 
+            main = "P-P Plot of RACMO vs KNW")
+
+pp_plot_compare(RACMO_Cabauw$w10m, data_KNW$F010, labs=labs)
+```
+
+Here between RACMO and KNW, we have practically the same conclusion as before between RACMO and measures, but to a lesser extent. But here, we see that the tail is more impotant with RACMO.
+
+<!-- > In the end, we expect a higher values in the estimation of the tailindex for measurements, then KNW then RACMO. -->
+
+## Distributions
+### yearly Block Maxima distributions
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+bm = BM_select(data_Cabauw)
+plot(ecdf(bm$max),ylim = c(0,1), xlim=c(13,26),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of BM for each dataset'))
+bm = BM_select(data_KNW)
+lines(ecdf(bm$max),col='blue')
+
+bm = BM_select(RACMO_Cabauw)
+lines(ecdf(bm$max),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+We see that the distribution of yearly Block Maxima for RACMO fits well with the yearly-BM distribution of Measurements. But The BM of KNW are smaller. This can maybe affect the estimations (of location and scale probably).
+
+```{r}
+# Q-Q plot to compare data1 and data2
+qqplot(BM_select(RACMO_Cabauw,height = 'w10m')$max, BM_select(data_Cabauw)$max, main = "Q-Q Plot of RACMO vs KNW",
+       xlab = "Quantiles of RACMO", ylab = "Quantiles of measurements")
+abline(0, 1, col = "red")  # Adds a reference line y=x
+
+
+labs = list(xlab = "Empirical CDF of BM RACMO", 
+            ylab = "Empirical CDF of BM Measurements", 
+            main = "P-P Plot of RACMO vs Measurements")
+
+pp_plot_compare(BM_select(RACMO_Cabauw,height = 'w10m')$max,BM_select(data_Cabauw)$max,labs)
+```
+
+
+### Whole datasets distributions
+
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+plot(ecdf(data_Cabauw$F010),ylim = c(0,1),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of each whole dataset'))
+lines(ecdf(data_KNW$F010),col='blue')
+
+bm = BM_select(RACMO_Cabauw,height = 'w10m')
+lines(ecdf(RACMO_Cabauw$F010),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+KNW and Measurements distributions fits well. However, we see that there are more greater values in RACMO than in KNW and Measurements. 
+
+### Peak over Threshold Distributions
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+pot = PoTselect(data_Cabauw$F010,p = 0.005,sep=6*12)$pot
+plot(ecdf(pot),ylim = c(0,1), xlim=c(10,26),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs of PoT for each dataset'))
+
+pot = PoTselect(data_KNW$F010,p = 0.005,sep=12)$pot
+lines(ecdf(pot),col='blue')
+
+
+pot = PoTselect(RACMO_Cabauw$w10m,p = 0.005,sep=4)$pot
+lines(ecdf(pot),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c('Measurements','KNW', "RACMO"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+This is the ECDF of 10% of peaks over threshold. We see that the distributions are shifted. RACMO has more greater values.  
+
+
+# Uncertainties
+
+## Block Maxima estimation
+
+### Parameters estimation on Measurements with RACMO
+
+First, we'll use the RACMO data to estimate the tail index and then inject this estimate into the Measurements data to estimate the scale and location.
+
+```{r}
+fit_RACMO = BM_fit(BM_select(RACMO_Cabauw,height = 'w10m'),plot=F)
+
+fpar <- function(p, xpar) {
+  loc <- matrix(p[1], xpar[1], xpar[2])
+  scale <- matrix(p[2], xpar[1], xpar[2])
+  shape <- matrix(fit_RACMO['tail'], xpar[1], xpar[2])
+  list(loc = loc, scale = scale, shape = shape)
+}
+
+bm = BM_select(data_Cabauw)
+kwargs = list(start=c(mean(bm$max),sd(bm$max)),fpar=fpar,xpar=c(length(bm$max),1))
+
+trueTail=BM_fit(BM_select(data_Cabauw),plot=F)
+modelTail = BM_fit(BM_select(data_Cabauw), kwargs = kwargs,plot=F)
+
+print(fit_RACMO)
+print(trueTail)
+print(modelTail)
+
+z <- qnorm(1 - 0.05 / 2)
+X <- 10^seq(log10(2),log10(10000),length.out = 5)
+
+points <- data.frame(speed = sort(bm$max),return = 1/(1-seq(1/length(bm$max),1-1/length(bm$max),length.out=length(bm$max))))            # observed Values
+df <- data.frame(
+    return = X,
+    original = qgev(p=1 - 1 / X, loc = trueTail['loc'], scale = trueTail['scale'], shape = trueTail['tail']),
+    model_est =qgev(p=1 - 1 / X, loc = modelTail['loc'], scale = modelTail['scale'], shape = modelTail['tail']) 
+  )
+
+
+ggplot(df, aes(x = return)) +
+      geom_line(aes(x=return,y=original,color='all parameters estimated\nfrom Measurements')) +
+      geom_line(aes(x=return,y=model_est,color='shape estimated with RACMO')) +
+      geom_point(data=points,aes(x = return,y = speed)) +
+      # geom_vline(xintercept = 18,col='red')+
+      scale_x_log10(labels= scales::comma) +
+      labs(x = 'Return Period (years)', y = 'Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years,\n1y BM, on measurements')) +
+      theme(legend.position = "right")
+
+print(df)
+```
+
+### Confidence Interval
+
+We have one confidence interval for the tail index estimate based on RACMO model data, and two confidence intervals for scale and location.
+
+> For the moment, only the tail index is considered.
+
+To calculate the confidence interval for the wind speed estimate, we use bootstrap estimates from the RACMO dataset. For each bootstrap estimate of the tail index on RACMO, we estimate the scale and loc on the original Measurements data. Then, we estimate the return values with each triplet of parameters (tail,loc,scale) thus estimated.
+
+This gives us a first confidence interval as follows :
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+fit_RACMO <- bootstrap(RACMO_Cabauw,Nb = 100,column = 'w10m',method = 'BM')
+bm = BM_select(data_Cabauw)
+
+z <- qnorm(1 - 0.05 / 2)
+X <- 10^seq(log10(2),log10(10000),length.out = 5)
+
+return_values <- matrix(NA, nrow = 100, ncol = length(X))
+for (i in 1:100){
+  fpar <- function(p, xpar) {
+    loc <- matrix(p[1], xpar[1], xpar[2])
+    scale <- matrix(p[2], xpar[1], xpar[2])
+    shape <- matrix(fit_RACMO$df$tail[i], xpar[1], xpar[2])
+    list(loc = loc, scale = scale, shape = shape)
+  }
+  
+  kwargs = list(start=c(mean(bm$max),sd(bm$max)),fpar=fpar,xpar=c(length(bm$max),1))
+  
+  par = BM_fit(bm, kwargs = kwargs, plot = F)
+ 
+
+  return_values[i,] = qgev(p=1 - 1 / X, loc = par['loc'], scale = par['scale'], shape = par['tail']) 
+}
+
+sd = apply(log(return_values),2,sd)
+model_est = qgev(p=1 - 1 / X, loc = modelTail['loc'], scale = modelTail['scale'], shape = modelTail['tail'])
+
+
+
+df_plot = cbind(return = X,melt(data.frame(boot=t(return_values))))
+points <- data.frame(speed = sort(bm$max),return = 1/(1-seq(1/length(bm$max),1-1/length(bm$max),length.out=length(bm$max))))            # observed Values
+df <- data.frame(
+    return = X,
+    original = qgev(p=1 - 1 / X, loc = trueTail['loc'], scale = trueTail['scale'], shape = trueTail['tail']),
+    model_est = model_est,
+    lower = model_est*exp(-z*sd),
+    upper = model_est*exp(z*sd)
+  )
+
+
+ggplot(df, aes(x = return)) +
+      geom_line(aes(x=return,y=original,color='all parameters estimated\nfrom Measurements')) +
+      geom_line(aes(x=return,y=model_est,color='shape estimated with RACMO')) +
+      geom_ribbon(aes(ymin = lower, ymax = upper, fill = 'Confidence Interval, 95%'), alpha = 0.2) +
+      geom_point(data=points,aes(x = return,y = speed,shape='Observed measurements')) +
+      # geom_line(data = df_plot, aes(x=return,y=value,line=variable),col='gray',alpha = 0.1)+
+      scale_x_log10(labels= scales::comma) +
+      labs(x = 'Return Period (years)', y = 'Return Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years,\n1y BM, on measurements')) +
+      # scale_linetype_manual(name="", values = c('Mean Estimate' = "dashed", 'Without BS' = "solid")) +
+      # scale_fill_manual(name = "", values = c('Confidence Interval, 95% bootstrap' = 'blue','Confidence Interval,  95% log(bootstrap)'='red')) +
+      # theme_minimal() +
+      theme(legend.position = "right")
+```
+
+However, this confidence interval does not take into account all uncertainties, only those on the tail index estimate.
+
+> Now, let's take into account the scale and loc estimation errors.
+
+To do this, for each bootstrap estimate of the tail index on RACMO, we'll also bootstrap the scale and loc on Measurements. Then, for each pair (scale, loc) bootstrapped on Measurements from each tail index bootstrapped on RACMO (triplet (tail,scale,loc)), we can estimate the return values. Then we can approximate the confidence interval with a normal approximation, considering that the log of the return value is approximatively normal. So we have then :
+
+Let $q$ be the estimation of the original dataset. Let $s_{log}$ be the standard deviation of the $log$ of the bootstrap estimations. Let $z$ be the quantile of normale distribution for 95% confidence ($z\simeq 1.96$). 
+
+Then we can compute the standard error as : 
+$$
+bounds = qe^{\pm zs_{log}} \simeq qe^{\pm 1.96s_{log}}
+$$
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+WSEst_model_to_measure_BM(data_Cabauw,RACMO_Cabauw,col_model = 'w10m')
+```
+
+
+### KNW
+
+
+Let's do the same with KNW instead of RACMO:
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+WSEst_model_to_measure_BM(data_Cabauw,data_KNW,col_model = 'w10m')
+```
+
+
+
+
+
+
+
+# Block maximum
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+col = 'F010'
+alpha = 0.05
+labels = c('measurements','KNW','RACMO','RACMO','RACMO','RACMO')
+names(labels) = names(all_data)
+out = list()
+lower_bounds = c()
+upper_bounds =  c()
+
+for (i in names(all_data)){
+    print(i)
+    if (!is.null(all_data[[i]][[col]])){
+        out[[i]] <- bootstrap(all_data[[i]],Nb=300,column = col,method='BM')
+        lower_bounds[i] = out[[i]]$original[1] - qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+        upper_bounds[i] = out[[i]]$original[1] + qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+    }
+    else{
+        print(paste(col,': data not found'))
+    }
+}
+
+
+plot_data <- data.frame(
+  x = c(1/6,1,3,6,12,24),
+  tail_index = unlist(lapply(out, function(sublist) sublist$original[1])),
+  lower_bound = lower_bounds,
+  upper_bound = upper_bounds,
+  group = as.factor(labels)
+)
+
+ggplot(plot_data, aes(x = x, y = tail_index, color = group)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2) +
+  labs(
+    x = "Averaging/Sampling time (h)",
+    y = "Tail index with CI",
+    color = "Group",
+    title = paste(col,'at Cabauw')
+  ) +
+  # scale_y_log10()+
+  scale_x_log10() +
+  theme_minimal()
+```
+
+### With different heights
+```{r, message=FALSE, warning=FALSE, results='hide'}
+names = names(all_data)
+save <- list()
+for (di in names){
+  data <- all_data[[di]]
+  alpha = 0.05
+  labels = names(data)[!grepl("^[D,u,v,Y]|PF.[02-9].", names(data))]
+  
+  names(labels) = labels
+  out = list()
+  lower_bounds = c()
+  upper_bounds =  c()
+  
+  for (i in names(data)){
+      print(i)
+      if (!is.null(data[[i]]) & (i %in% labels)){
+          out[[i]] <- bootstrap(data[c(i,'Year')],Nb=100,column = i,method='BM')
+          lower_bounds[i] = out[[i]]$original[1] - qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+          upper_bounds[i] = out[[i]]$original[1] + qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+      }
+  }
+  
+  labels = labels[!(labels %in%  c('DateTime','Year'))]
+  
+  plot_data <- data.frame(
+    x = labels,
+    tail_index = unlist(lapply(out, function(sublist) sublist$original[1])),
+    lower_bound = lower_bounds,
+    upper_bound = upper_bounds,
+    heights = as.factor(labels)
+  )
+  
+  ggplot(plot_data, aes(x = x, y = tail_index, color = heights)) +
+    geom_point() +
+    geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2) +
+    labs(
+      x = "Averaging/Sampling time (h)",
+      y = "Tail index with CI",
+      color = "Group",
+      title = paste(col,'at Cabauw')
+    ) +
+    # scale_y_log10()+
+    # scale_x_log10() +
+    theme_minimal()
+  
+  save[[di]]<-plot_data
+  }
+```
+
+
+```{r}
+save[['measure']]$group <- as.numeric(minutes(10),unit='hours')
+save[['KNW']]$group <- as.numeric(hours(1),unit='hours')
+save[['RACMO']]$group <- as.numeric(hours(3),unit='hours')
+save[['RACMOh6']]$group <- as.numeric(hours(6),unit='hours')
+save[['RACMOh12']]$group <- as.numeric(hours(12),unit='hours')
+save[['RACMOh24']]$group <- as.numeric(hours(24),unit='hours')
+
+
+
+
+for (i in names(save)){
+  save[[i]] <- save[[i]] %>% arrange(tail_index)
+  save[[i]]$plot <- save[[i]]$group + seq(1,1/length(save[[i]]$group),length.out=length(save[[i]]$group))
+  save[[i]] <- save[[i]][!grepl("^[D,u,v]|PF.[02-9].", rownames(save[[i]])),]
+  save[[i]]$x <-  gsub("[^P|0-9]", "", rownames(save[[i]]))
+  save[[i]]$x[is.na(save[[i]]$x)] <- 10
+  
+  save[[i]]$pseudolog <- pseudo_log(save[[i]]$tail_index,threshold = 1)
+  save[[i]]$pllb <- pseudo_log(save[[i]]$lower_bound,threshold = 1)
+  save[[i]]$plub <- pseudo_log(save[[i]]$upper_bound,threshold = 1)
+  
+  print(save[[i]])
+  # gg = ggplot(save[[i]], aes(x = x, y = tail_index)) +
+  #   geom_point() +
+  #   geom_line() +
+  #   geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound),alpha=0.2) +
+  #   labs(
+  #     x = "heights",
+  #     y = "Tail index with CI",
+  #     color = "Group",
+  #     title = paste(i,'at Cabauw')
+  #   ) +
+  #   theme_minimal()
+  # print(gg)
+}
+# Combine all data frames into one
+
+combined_df <- bind_rows(save)
+
+```
+
+
+
+
+```{r}
+combined_df <- combined_df %>% arrange(group)
+
+
+ggplot(combined_df, aes(x = group, y = tail_index,color=as.factor(x))) +
+    geom_point() +
+    geom_line() +
+    #geom_errorbar(aes(x=plot,ymin = lower_bound, ymax = upper_bound)) +
+    geom_segment(aes(x = plot, y = lower_bound, xend = plot, yend = upper_bound),size=1,alpha=0.8) +
+    labs(
+      x = "averaging/sampling time (h)",
+      y = "Tail index with CI",
+      color = "heights (m)",
+      title = paste('at Cabauw')
+    ) + 
+  # ylim(c(-0.75,0.5))+
+    ylim(range(combined_df[combined_df$group>=3,c("tail_index","lower_bound","upper_bound")]))+
+    xlim(c(3,25))+
+    # scale_x_log10()+
+    theme_minimal()
+
+```
+
+```{r}
+combined_df$loggroup = log(combined_df$group)
+
+
+test <- lm(tail_index ~ loggroup, data = combined_df[combined_df$heights %in% c('F010') & combined_df$group > 3,])
+summary(test)
+print(test)
+
+# Filter data for ggplot2
+filtered_data_ggplot <- combined_df[combined_df$heights %in% c('PF010', 'F010'),]
+filtered_data <- combined_df[combined_df$heights %in% c('PF010', 'F010') & combined_df$group >= 3, c('loggroup', 'tail_index')]
+plot(filtered_data$loggroup, filtered_data$tail_index, main = "Scatter Plot with Linear Regression Line", xlab = "Log Group", ylab = "Tail Index", pch = 19)
+abline(test, col = "red", lwd = 2)
+
+# Create the plot with ggplot2
+ggplot(filtered_data_ggplot, aes(x = group, y = tail_index, color = heights)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept =3/(60*60), linetype = "dashed", color = "blue") +
+  geom_hline(yintercept = save$RACMO$tail_index[8], linetype = "dashed", color = "blue") +
+  scale_x_log10() +  # Use log10 scale for x-axis
+  ylim(c(-0.15,0))+
+  geom_abline(intercept = test$coefficients[1], slope = test$coefficients[2]*log(10), color = "red", linetype = "dashed") +
+  labs(title = "Linear Regression Plot with ggplot2", x = "Group", y = "Tail Index") +
+  theme_minimal()
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+On test si un resampling des mesures à Cabauw change beaucoup le résultat de l'estimation.
+On resample toutes les 3h pour pouvoir comparé avec RACMO.
+```{r, message=FALSE, warning=FALSE, results='hide',eval=FALSE}
+col = 'F010'
+alpha = 0.05
+labels = minutes(seq(0,170,10))
+names(data_Cabauw_3h) = labels 
+names(labels) = names(data_Cabauw_3h)
+out = list()
+lower_bounds = c()
+upper_bounds =  c()
+
+for (i in names(data_Cabauw_3h)){
+    print(i)
+    if (!is.null(data_Cabauw_3h[[i]][[col]])){
+        out[[i]] <- bootstrap(data_Cabauw_3h[[i]],Nb=300,column = col,method='BM')
+        lower_bounds[i] = out[[i]]$original[1] - qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+        upper_bounds[i] = out[[i]]$original[1] + qnorm(1 - alpha / 2) * sd(out[[i]]$df$tail)
+    }
+    else{
+        print(paste(col,': data not found'))
+    }
+}
+
+
+plot_data <- data.frame(
+  x = seq(0,170,10),
+  tail_index = unlist(lapply(out, function(sublist) sublist$original[1])),
+  lower_bound = lower_bounds,
+  upper_bound = upper_bounds,
+  group = as.factor(labels)
+)
+
+ggplot(plot_data, aes(x = x, y = tail_index, group = group)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2) +
+  labs(
+    x = "different sampling (min)",
+    y = "Tail index with CI",
+    color = "Group",
+    title = paste(col,'at Cabauw')
+  ) +
+  # scale_y_log10()+
+  # scale_x_log10() +
+  theme_minimal()
+```
+On ne peut pas trop conclure la dessus.
+
+
+
+# Différentes estimation du vent pour les 3 méthodes étudiées
+
+```{r, message=FALSE, warning=FALSE, results='hide',eval=FALSE}
+a = WSEst_BM(bootstrap(data_Cabauw,Nb = 100,column = 'F010',method = 'BM'),bm = BM_select(data_Cabauw), trueTail = BM_fit(BM_select(data_Cabauw),plot = F))$pred
+b = WSEst_BM(bootstrap(RACMO_Cabauw,Nb = 100,column = 'w10m',method = 'BM'),bm = BM_select(RACMO_Cabauw,height = 'w10m'), trueTail = BM_fit(BM_select(RACMO_Cabauw,height = 'w10m'),plot = F))$pred
+c = WSEst_GP(data_Cabauw,timestep = 1/6,threshold = 0.1)$df
+d = WSEst_GP(RACMO_Cabauw,col = 'w10m',timestep = 3,threshold = 0.1)$df
+block_length=  "1y"
+e = WSEst_GW(data_Cabauw,timestep = 1/6, threshold = 0.1)$df
+f = WSEst_GW(RACMO_Cabauw,timestep = 3, threshold = 0.1,col = "w10m")$df
+
+
+gg = ggplot(a, aes(x = return)) +
+      geom_ribbon(aes(ymin = lb, ymax = ub, fill = 'Meas BM'), alpha = 0.1) +
+      geom_line(aes(x=return,y=original,color = 'Meas BM')) +
+  
+      geom_ribbon(data = b,aes(ymin = lb, ymax = ub, fill = 'RACMO BM'), alpha = 0.2) +
+      geom_line(data = b,aes(x=return,y=original,color = 'RACMO BM')) +
+  
+      geom_ribbon(data = c,aes(ymin = lb, ymax = ub, fill = 'Meas PoT'), alpha = 0.1) +
+      geom_line(data = c,aes(x=return,y=original,color = 'Meas PoT')) +
+  
+      geom_ribbon(data = d,aes(ymin = lb, ymax = ub, fill = 'RACMO PoT'), alpha = 0.2) +
+      geom_line(data = d,aes(x=return,y=original,color = 'RACMO PoT')) +
+      xlim(c(50,10000))+
+      scale_x_log10(labels= scales::comma) +
+      labs(x = 'Return Period (years)', y = 'Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years')) +
+      theme_minimal() +
+      theme(legend.position = "right")
+print(gg)
+
+ggplot(a, aes(x = return)) +
+      geom_ribbon(aes(ymin = lb, ymax = ub, fill = 'Meas BM'), alpha = 0.1) +
+      geom_line(aes(x=return,y=original,color = 'Meas BM')) +
+  
+      geom_ribbon(data = c,aes(ymin = lb, ymax = ub, fill = 'Meas GP'), alpha = 0.1) +
+      geom_line(data = c,aes(x=return,y=original,color = 'Meas GP')) +
+  
+      geom_ribbon(data = e,aes(ymin = lb, ymax = ub, fill = 'Meas GW'), alpha = 0.1) +
+      geom_line(data = e,aes(x=return,y=original,color = 'Meas GW')) +
+      xlim(c(50,10000))+
+      scale_x_log10(labels= scales::comma) +
+      labs(x = 'Return Period (years)', y = 'Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years, Measurements')) +
+      theme_minimal() +
+      theme(legend.position = "right")
+
+ggplot(b, aes(x = return)) +
+      geom_ribbon(aes(ymin = lb, ymax = ub, fill = 'RACMO BM'), alpha = 0.2) +
+      geom_line(data = b,aes(x=return,y=original,color = 'RACMO BM')) +
+  
+      geom_ribbon(data = d,aes(ymin = lb, ymax = ub, fill = 'RACMO GP'), alpha = 0.2) +
+      geom_line(data = d,aes(x=return,y=original,color = 'RACMO GP')) +
+  
+  
+      geom_ribbon(data = f,aes(ymin = lb, ymax = ub, fill = 'RACMO GW'), alpha = 0.1) +
+      geom_line(data = f,aes(x=return,y=original,color = 'RACMO GW')) +
+      xlim(c(50,10000))+
+      scale_x_log10(labels= scales::comma) +
+      labs(x = 'Return Period (years)', y = 'Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years, RACMO')) +
+      theme_minimal() +
+      theme(legend.position = "right")
+     
+     
+```
+
+# POT
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+timesep = c(6*12,12,4,2,1,1)
+names(timesep) = names(all_data)
+fraq_min = 2.5
+col = "F010"
+out = list()
+for (i in names(all_data)){
+    print(i)
+    if (!is.null(all_data[[i]][[col]])){
+        X <- PoTselect(all_data[[i]]$F010,0.1,timesep[i])
+        l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+        out[[i]] <- FitGP_MLE2(X$pot, 1, N= length(all_data[[i]][[col]]), r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label=paste(i)))
+        # lower_bounds[i] = out[[i]]$
+        # upper_bounds[i] = out[[i]]$
+    }
+    else{
+        print(paste(col,': data not found'))
+    }
+}
+tailindexplot_2(out,fix_y = c(-0.5,0.5))
+
+```
+
+On peut esperer avoir un bon resultat en prenant un seuil de 0.01
+
+
+
+
+
+## Select threshold corresponding to BM
+
+
+
+```{r}
+
+test <- function(data,separation,column = "F010"){
+bm = bootstrap(data,Nb=100,column = column,method='BM')
+
+s <- sum(data$F010 > bm$original['loc'],na.rm=T)/nrow(data)
+print(paste0("Threshold = ",bm$original['loc'],', corresponds to ',s*100,'% of the whole dataset'))
+
+print(sum(data$F010 > bm$original['loc'],na.rm=T))
+X <- PoTselect(data$F010,sum(data$F010 > bm$original['loc'],na.rm=T)/nrow(data),separation = separation)
+
+# print(plot_extremes(X,data,s=bm$original['loc']))
+
+l0 <- length(X$pot)-1
+
+print(paste('And',100*l0/length(X$pot),'% of the 100% PoT selection with 12h separation to avoid clusters'))
+
+pot = FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label=0))
+
+
+
+alpha = 0.05
+z = qnorm(1 - alpha / 2)
+
+plot_data <- data.frame(
+  x = c('PoT','BM'),
+  tail_index = c(pot$tailindex,bm$original['tail']),
+  lower_bound = c(pot$tailindex - z*pot$tailindexStd,bm$original['tail']-z*sd(bm$df$tail)),
+  upper_bound = c(pot$tailindex + z*pot$tailindexStd,bm$original['tail']+z*sd(bm$df$tail)),
+  group = factor(c('PoT','BM'))
+)
+print(plot_data)
+
+ggplot(plot_data, aes(x = x, y = tail_index, color = group)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2) +
+  labs(
+    x = "method",
+    y = "Tail index with CI",
+    color = "Group",
+    title = paste('test',deparse(substitute(data)))
+  ) +
+  # ylim(c(-1,1))+
+  theme_minimal()
+}
+
+test(RACMO_Cabauw,4,column = 'w10m')
+```
+
+
+
+```{r}
+data <- data_Cabauw
+sep <- 12*6
+bm = BM_select(data)
+
+bm_fit <- BM_fit(BM_select(data),plot=F)
+pot = PoTselect(na.approx(data$F010),sum(data$F010 > bm_fit['loc'],na.rm=T)/nrow(data),sep)
+  
+l0 = length(pot$pot)-1
+pot_fit = FitGP_MLE2(pot$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label=0))
+pot_fit = c(pot_fit$tailindex,pot_fit$location,pot_fit$scale); names(pot_fit) = c('tail','loc','scale')
+
+print('bm :')
+print(bm_fit)
+print('pot :')
+print(pot_fit)
+
+xspan = seq(min(c(bm$max,pot$pot)),max(c(bm$max,pot$pot)),0.5)
+
+plot(ecdf(bm$max),pch=1,col='black',
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = 'CDF of both POT and BM selection, measure')
+lines(ecdf(pot$pot[pot$pot>bm_fit['loc']]),pch=3,col='red')
+lines(xspan,cgev(xspan,loc = bm_fit['loc'],scale = bm_fit['scale'],tail = bm_fit['tail']),lty='dashed',col='blue')
+lines(xspan,cgp(xspan,loc = pot_fit['loc'], scale =pot_fit['scale'],tail = pot_fit['tail']),lty='dashed',col='green')
+legend('bottomright',legend=c("ecdf PoT","ecdf BM", "cgp fit", "cgev fit"),
+                     col = c('red','black','green','blue'),
+                     pch = c(3,1,NA,NA),
+                     lty = c(1,1,2,2))
+
+
+
+```
+
+
+
+
+

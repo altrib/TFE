@@ -1,0 +1,123 @@
+---
+title: "Extreme Value Analysis - The Block Maxima Metod"
+author: "Alxandre Tribut"
+date: July 22, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r,echo=FALSE}
+source("../tools.R")
+```
+
+```{r,echo=FALSE}
+Cabauw_measure <- read.csv("../../../Data/Data_Cabauw/Cabauw_measure.csv")
+Cabauw_measure$Year = year(Cabauw_measure$Year)
+Cabauw_measure$DateTime = ymd_hms(Cabauw_measure$DateTime)
+Cabauw_measure = Cabauw_measure[Cabauw_measure$Year > 2000 & Cabauw_measure$Year < 2020,]
+```
+
+# Block Maxima extraction
+
+We have a sample of wind speed for several years. To extract the block maximum, we define block of 1 year with the starting of the year on the 1st of July. If we would have taken the starting year on 1st of January, it would be more likely that we take the same storm for two consecutive years, as the big storms happen more in winter.
+
+```{r}
+bm <- BM_select(Cabauw_measure)
+bm
+plot_extremes(bm,data = Cabauw_measure,m='BM')
+```
+
+To see if our selection is good, we can look at the autocorrelation.
+
+```{r}
+acf(bm$max,lag.max = 2000,main = "Block Maximum autocorrelation on Cabauw measurements")
+Box.test(bm$max, type="Ljung-Box",fitdf = 3)
+```
+
+The p-value of the Ljung-Box test is \> 0.05 so there is no significant proof that the data are autocorrelated.
+
+So we can assume that the block maxima are independent.
+
+# Basic Block Maxima method for parameters estimation
+
+To estimate parameters with Block Maxima method, we used the `fgev.flex` function with an assumption of stationarity in space and time. (space we take only one location and time we don't take in account climate change) this function will fit the Generalized Extreme Value distribution the the Block Maxima sample.
+
+```{r}
+trueTail = BM_fit(bm)
+```
+
+In black, we have the empirical distribution of the sample, and in red the estimated distribution.
+
+# Bootstrap for confidence interval
+
+To estimate the confidence interval of the estimation, we can use the bootstrap method explained in report.
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+BM_TIplot(Cabauw_measure,Nbs = 100)
+```
+
+On the measurements, because we don't have many years of data, the uncertainties are big.
+
+# Wind speed estimation
+
+Using this estimated parameters and there uncertainties, we can estimate the extrapolation of the distribution of the wind speed for high return period :
+
+```{r,results='hide'}
+out <- bootstrap(Cabauw_measure, Nb=500, column='F010', method='BM')
+bm <- BM_select(Cabauw_measure)
+trueTail <- BM_fit(bm,plot = F)
+WSEst_BM(out,bm=bm,length.out = 2)
+```
+
+
+
+
+# Independence of the estimations
+
+
+```{r}
+plot(out$df$tail,out$df$loc)
+plot(out$df$tail,out$df$scale)
+plot(out$df$loc,out$df$scale)
+
+write.csv(out$df,file = "test.csv",dec = '.',sep=",",row.names = F)
+```
+
+
+# Comparison to theoretical deviation
+
+```{r}
+gamma0 = 0.000001#trueTail['tail']
+
+gamma_star = 0.5772157
+
+p = (1 + gamma0)^2*gamma(1+2*gamma0)
+q = (1+gamma0)*digamma(1+gamma0)*gamma(1+gamma0) + (1+1/gamma0)*gamma(2+gamma0)
+r = gamma(2 + gamma0)
+
+
+
+InfoMatrix = matrix(0,3,3)
+InfoMatrix[1,1] = ((pi^2)/6 + (1-gamma_star + 1/gamma0)^2 - 2*q/gamma0 + p/(gamma0^2))/gamma0^2
+InfoMatrix[1,2] = -1/gamma0 * (q-p/gamma0)
+InfoMatrix[1,3] = -(1- gamma_star - q + (1-r+p)/gamma0)/gamma0^2
+InfoMatrix[2,2] = p
+InfoMatrix[2,3] = -(p-r)/gamma0
+InfoMatrix[3,3] = 1/gamma0^2 * (1-2*r+p)
+
+
+InfoMatrix  
+
+cov(out$df)
+```
+
+
+

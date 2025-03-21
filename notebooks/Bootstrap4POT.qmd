@@ -1,0 +1,16 @@
+
+
+
+
+
+
+```{r}
+
+GP_boot = WSEst_model_to_measure_GP_3(RACMO_Schiphol,data_Schiphol,"F010","FFUnifNoise",timestep_model = 3,timestep_measure = 1,th_model = 0.05,th_measure = 0.05,length.out = 1,winter = T,Nb = 100)
+GW_boot = WSEst_model_to_measure_GW_3(RACMO_Schiphol,data_Schiphol,"F010","FFUnifNoise",timestep_model = 3,timestep_measure = 1,th_model = 0.05,th_measure = 0.05,length.out = 1,winter = T,Nb = 2)
+
+print(GP_boot$gg)
+
+print(GW_boot$gg)
+```
+

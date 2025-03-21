@@ -1,0 +1,352 @@
+---
+title: "Extreme Value Analysis - The Peak over Threshold Metod"
+author: "Alxandre Tribut"
+date: July 25, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r,echo=FALSE}
+source("../tools.R")
+```
+
+```{r,echo=FALSE}
+Cabauw_measure <- read.csv("../../../Data/Data_Cabauw/Cabauw_measure.csv")
+Cabauw_measure$Year = year(Cabauw_measure$Year)
+Cabauw_measure$DateTime = ymd_hms(Cabauw_measure$DateTime)
+Cabauw_measure = Cabauw_measure[Cabauw_measure$Year > 2000 & Cabauw_measure$Year < 2020,]
+```
+
+
+
+
+
+# Peak over Threshold extraction
+
+First, we extract the peaks from the dataset in order to get an i.i.d. sample for the peak over threshold method. 
+
+
+Thus, we select the maximum value of each excursions within the 10% highest values of the data and set a separation of 12h between each excursions.
+We do this in order to avoid clustering and get independent data. (not the same storm twice). We assume that taking the 30% highest data is enough to split the different storms into different excursions. (we'll discuss that later in this notebook)
+
+
+```{r}
+pot = PoTselect_2(na.approx(Cabauw_measure$F010),p = 0.3,separation = 12*6)
+```
+
+
+
+To see if our selection is good, we can look at the autocorrelation.
+
+
+
+```{r}
+acf(pot$pot,lag.max = 2000)
+Box.test(pot$pot, type="Ljung-Box")
+
+```
+
+The selected peaks looks very autocorrelated but it is just the fist selection of the peaks and we'll not use all of these, but a sample fraction for the estimation of the parameters.  
+
+
+
+
+
+
+# Separation between excursions
+
+In the previous, we chose a separation of 12h between selected data. Now we can look if we choose wider separation between selected data, we have a different result. We can suppose that 12h between each time points can't guaranty the independence, so we want to verify this.
+
+Data selected with a threshold but for a wider separation tends to be a block maxima with the size of the separation.
+Indeed, selecting peaks with a wide separation is like taking the block maximum of the width of this separation.
+As we want to avoid clustering, taking a to wide separation isn't very relevant.
+
+
+
+```{r}
+
+pot1 = PoTselect(na.approx(Cabauw_measure$F010),p = 0.1,separation = 6)
+pot2 = PoTselect(na.approx(Cabauw_measure$F010),p = 0.1,separation = 24*6)
+pot3 = PoTselect(na.approx(Cabauw_measure$F010),p = 0.1,separation = 72*6)
+pot4 = PoTselect(na.approx(Cabauw_measure$F010),p = 0.1,separation = 24*7*6)
+
+# plot empirical frequencies of exceedance
+Ts = length(Cabauw_measure$F010)/(24*6*365.3435)
+df <- data.frame(values = c(-sort(-pot1$pot),-sort(-pot$pot),-sort(-pot2$pot), -sort(-pot3$pot), -sort(-pot4$pot)),
+                 freq = c((1:length(pot1$pot))/Ts,(1:length(pot$pot))/Ts,(1:length(pot2$pot))/Ts, (1:length(pot3$pot))/Ts, (1:length(pot4$pot))/Ts),
+                 separation = factor(rep(c("2h","12h","24h", "72h", "1week"), 
+                                         c(length(pot1$pot),length(pot$pot),length(pot2$pot), length(pot3$pot), length(pot4$pot))),
+                                     levels = c("2h","12h","24h", "72h", "1week")))
+
+# print(c(length(pot$pot),length(pot2$pot), length(pot3$pot), length(pot4$pot)))
+
+ggplot(df, aes(x = values, y = freq, color = separation)) +
+  geom_step(direction = 'vh') +
+  labs(x = "Wind speed (m/s), 10m", y = "Frequency of exceedence (1/year)", title = "") +
+  scale_y_log10()+
+  theme_minimal()
+```
+
+
+These are empirical frequencies, with separation applied to avoid clustering (wind speed fluctuations during a single storm can lead to multiple “peaks”, but for applications, these are not really relevant; we want to know how often a storm happens during which a certain wind speed level is exceeded).
+
+However, we can see that the separation is not entirely “innocent”: it can also introduce a bias (because we make block maxima)
+
+> This seems to confirm that 12h is a good choice: it gets rid of the clustering, but the tail index isn't hardly affected.
+
+
+
+
+```{r}
+
+pot1 = PoTselect_2(na.approx(Cabauw_measure$F010),p = 0.1,separation = 6)
+pot2 = PoTselect_2(na.approx(Cabauw_measure$F010),p = 0.1,separation = 24*6)
+pot3 = PoTselect_2(na.approx(Cabauw_measure$F010),p = 0.1,separation = 72*6)
+pot4 = PoTselect_2(na.approx(Cabauw_measure$F010),p = 0.1,separation = 24*7*6)
+
+# plot empirical frequencies of exceedance
+Ts = length(Cabauw_measure$F010)/(24*6*365.3435)
+df <- data.frame(values = c(-sort(-pot1$pot),-sort(-pot$pot),-sort(-pot2$pot), -sort(-pot3$pot), -sort(-pot4$pot)),
+                 freq = c((1:length(pot1$pot))/Ts,(1:length(pot$pot))/Ts,(1:length(pot2$pot))/Ts, (1:length(pot3$pot))/Ts, (1:length(pot4$pot))/Ts),
+                 separation = factor(rep(c("2h","12h","24h", "72h", "1week"), 
+                                         c(length(pot1$pot),length(pot$pot),length(pot2$pot), length(pot3$pot), length(pot4$pot))),
+                                     levels = c("2h","12h","24h", "72h", "1week")))
+
+# print(c(length(pot$pot),length(pot2$pot), length(pot3$pot), length(pot4$pot)))
+
+ggplot(df, aes(x = values, y = freq, color = separation)) +
+  geom_step(direction = 'vh') +
+  labs(x = "Wind speed (m/s), 10m", y = "Frequency of exceedence (1/year)", title = "") +
+  scale_y_log10()+
+  theme_minimal()
+```
+
+With the new PotSelect function, the difference is not that clear anymore. We can still assume that 12h is enough to get rid of the clustering and not introduce to big bias.
+
+
+
+## Selecting the storms
+
+We can look further in this peak selection because it is the most important parameter for the estimations.
+
+
+```{r,results='hide'}
+years <- range(Cabauw_measure$Year)
+probs <- c(0.1, 0.2, 0.3, 0.4)
+# separations (hours)
+seph <- c(0, 3, 6, 12, 24, 48)
+
+u10 <- Cabauw_measure$F010
+dt <- Cabauw_measure$F010
+dt <-  ymd_hms(Cabauw_measure$DateTime)
+iw <- which(is.na(dt))
+dt[iw] <- dt[iw+1]-600
+
+yr <- Cabauw_measure$Year
+id <- yr %in% years
+
+# selected 10-min values
+u10s <- u10[id]
+dts <- dt[id]
+
+# hourly averages
+U10s <- array(u10s, dim= c(6, length(u10s)/6))
+dth <- dts[seq(6, length(dts), 6)]
+u10h <- apply(U10s, 2, mean, na.rm= T)
+
+# and further reductions to winter half year
+id <- month(dts) %in% c(10:12, 1:3)
+u10sw <- u10s[id]
+dtsw <- dts[id]
+
+id <- month(dth) %in% c(10:12, 1:3)
+u10hw <- u10h[id]
+dthw <- dth[id]
+
+# # only for the 
+# id <- !is.na(u10s)
+# u10sa <- u10s[id]
+# id <- !is.na(u10h)
+# u10ha <- u10h[id]
+u10s <- na.approx(u10s)
+u10h <- na.approx(u10h)
+u10sw <- na.approx(u10sw)
+u10hw <- na.approx(u10hw)
+
+# separations (hours and 10-min intervals)
+seps <- seph*6
+ls <- length(seps)
+
+for (p in probs) {
+  # Xpot1 <- Xpot2 <- Xpot1w <- Xpot2w <- 
+  Xpot2 <- Xpot2w <- 
+    data.frame(pot= double(0), ind= integer(0), p= double(0), 
+               sep= integer(0), sampling= NULL, RP= double(0))
+  
+  # All year
+
+  for (i in 1:ls) {
+    temp <- as.data.frame(PoTselect_2(u10s, p, seps[i]))
+    temp$sep <- seph[i]
+    temp$sampling <- "10min"
+    temp$pot <- -sort(-temp$pot)
+    lpot <- length(temp$pot)
+    temp$RP <- 20/(1:lpot)
+    Xpot2 <- rbind(Xpot2, temp)
+    
+    temp <- as.data.frame(PoTselect_2(u10h, p, seph[i]))
+    temp$sep <- seph[i]
+    temp$sampling <- "1h"
+    temp$pot <- -sort(-temp$pot)
+    lpot <- length(temp$pot)
+    temp$RP <- 20/(1:lpot)
+    Xpot2 <- rbind(Xpot2, temp)
+  }
+  
+  # winter
+  
+  for (i in 1:ls) {
+    temp <- as.data.frame(PoTselect_2(u10sw, p, seps[i]))
+    temp$sep <- seph[i]
+    temp$sampling <- "10min"
+    temp$pot <- -sort(-temp$pot)
+    lpot <- length(temp$pot)
+    temp$RP <- 20/(1:lpot)
+    Xpot2w <- rbind(Xpot2w, temp)
+    
+    temp <- as.data.frame(PoTselect_2(u10hw, p, seph[i]))
+    temp$sep <- seph[i]
+    temp$sampling <- "1h"
+    temp$pot <- -sort(-temp$pot)
+    lpot <- length(temp$pot)
+    temp$RP <- 20/(1:lpot)
+    Xpot2w <- rbind(Xpot2w, temp)
+  }
+  
+  
+  
+
+  Xpot2$sep <- factor(Xpot2$sep)
+  Xpot2$sampling <- factor(Xpot2$sampling)
+  gg <- ggplot(data = Xpot2, mapping= aes(y= pot, x= RP, color= sep, linetype= sampling, 
+                                          grouping= interaction(sep, sampling))) 
+  gg <- gg + geom_step(direction= "hv")
+  # gg <- gg + geom_line()
+  gg <- gg + scale_x_log10()
+  gg <- gg + labs(title= paste("All year, PoT sample fraction is", p), y= "wind speed [m/s]", x= "return period [year]")
+  gg <- gg + theme(aspect.ratio= 1)
+  print(gg)
+  ggsave(filename= paste("PoT_freqcurves_p", p, "_Allyear_ver", 2, ".pdf", sep= ""), width= 7, height= 5)
+  
+  Xpot2w$sep <- factor(Xpot2w$sep)
+  Xpot2w$sampling <- factor(Xpot2w$sampling)
+  gg <- ggplot(data = Xpot2w, mapping= aes(y= pot, x= RP, color= sep, linetype= sampling, 
+                                           grouping= interaction(sep, sampling))) 
+  gg <- gg + geom_step(direction= "hv")
+  # gg <- gg + geom_line()
+  gg <- gg + scale_x_log10()
+  gg <- gg + labs(title= paste("Winter, PoT sample fraction is", p), y= "wind speed [m/s]", x= "return period [year]")
+  gg <- gg + theme(aspect.ratio= 1)
+  print(gg)
+  # ggsave(filename= paste("PoT_freqcurves_p", p, "_Winter_ver", 2, ".pdf", sep= ""), width= 7, height= 5)
+  
+}
+
+```
+
+
+
+Looking at the wind scale, we see that the curves for different separations diverge at lower wind speeds when using a higher sample fraction.
+So because the PoT sample is then larger (contains more low wind speeds), we can select a lower sample fraction in the estimation (to end up selection approx. the same wind speeds). We can see in the plots that with p= 0.3, the curves are almost identical at wind speeds of 10-12 m/s, whereas they are still quite different when taking p= 0.1.
+
+
+
+
+# Parameter estimation
+
+We can estimate the parameters for the quantile estimation with two different regularity assumptions, explained in the report, for the data.
+First, we'll focus on the simpliest which is Generalised Pareto.
+
+
+# Stability plots
+
+As we said previously, we'll perform the estimation on a fraction of the peak sample.
+
+To see which threshold is the best, we can estimate the parameters for different thresholds and see if we the estimation converges as the threshold increase.
+
+
+
+```{r,results='hide'}
+l0 <- round(10^(seq(-2.5, -0, 0.05))*length(pot$pot))
+fit <- FitGP_MLE2(pot$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="10m"))
+tailindexplot_2(list(fit),parameter = 'all')
+```
+
+
+To understand this plot:
+
+- We have a sample of peaks in input
+- To estimate the parameters and plot this stability plot, we take different fractions of this sample. When we take a smaller fraction, we take the greater values of the sample so we go further in the tail. Then, the estimation of the parameters should converge toward the parameters of the extreme value distribution.
+- the x axis is the sample fraction
+- the y axis is the estimation
+
+> The stability plot is usefull to select the appropriate threshold for the estimation of the wind speed in the end.
+
+
+We see that the estimation of the tail index seems to converge toward 0 and for the scale toward 2. This is what we expect according literature, the extreme wind speed distribution is usually considered as a Gumbel distribution (tail index  = 0). 
+
+
+For this height, a good threshold should be 10% of the peaks because we see that for lower sample fractions, the estimation goes very unstable.
+
+
+
+# Bootstrap for confidence interval
+
+On the last plot, the uncertainties were computed analytically. We can wonder if they can be different if we use bootstrap.
+
+
+
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+boot <- bootstrap(Cabauw_measure,Nb = 100,timesep = 12*6,fraq_min = 2)
+
+
+tailindexplot_3(boot$df,original = boot$original$original,plot_outliers = F,fix_y = c(-0.5,0.5))
+tailindexplot_2(list(boot$original),fix_y = c(-0.5,0.5))
+```
+
+
+Comparing the uncertainties with bootstrap and analytic, we can assume that the difference is not that significant. For computation time purpose, we will keep the analytic uncertainties.
+
+
+
+
+# Wind speed estimation
+
+Using this estimated parameters and there uncertainties, we can estimate the extrapolation of the distribution of the wind speed for high return period :
+
+
+```{r,results='hide'}
+WSEst_GP_2(data = Cabauw_measure,timestep = 1/6,threshold = 0.1,col = "F010")
+```
+
+This plot show the extrapolated wind speed with uncertainties. The points are the peaks of the 10% highest values in the whole dataset on which we estimate the parameters. The black ones are the data points used for the estimation, the grey ones are the data points under the threshold (dashed line) not used in the estimation. Here, we use 10% of the peaks for the estimation.
+
+
+
+
+# Generalized Weibull fit
+
+We can do the same analysis using the Generalized Weibull distribution instead of the Generalized Pareto.
+This is detailed in the Cabauw Notebook.
+
+

@@ -1,0 +1,910 @@
+---
+title: "Select Threshold"
+author: "Alexandre Tribut"
+date: June 25, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r}
+#| echo: false
+source('../tools.R')
+
+```
+
+```{r}
+# measurements Cabauw
+data_measure <- read.csv("../Data_Cabauw/MEASURED/fulldata10min.csv")
+data_measure$Year = year(data_measure$Year)
+data_measure$DateTime = ymd_hms(data_measure$DateTime)
+data_measure = data_measure[data_measure$Year > 2000 & data_measure$Year < 2020,]
+
+
+data_KNW <- read.csv("../Data_Cabauw/MODEL/modeldata.csv")
+data_KNW$DateTime = ymd_hms(data_KNW$DateTime)
+data_KNW$Year = year(data_KNW$Year)
+data_KNW = data_KNW[data_KNW$Year > min(data_KNW$Year) & data_KNW$Year < max(data_KNW$Year),]
+
+
+data_RACMO <- read.csv("../../../Data/Data_RACMO/fulldata.csv")
+data_RACMO$DateTime = ymd_hms(data_RACMO$DateTime)
+data_RACMO = data_RACMO[data_RACMO$Year > min(data_RACMO$Year) & data_RACMO$Year < max(data_RACMO$Year),]
+# data_RACMO = data_RACMO[order(data_RACMO$DateTime),]
+
+
+data = list(min10 = data_measure,h1 = data_KNW, h3 = data_RACMO)
+```
+
+# Methods
+
+## Methods possible
+
+There are several methods to perform the peak over threshold analysis.
+
+Method 1 :
+
+We first select the peaks from the whole dataset with a defined separation. We saw that this separation should be around 12 h to avoid a maximum of cluster (same storm) but without introducing a too big bias in the analysis.
+
+If there are NaN values in the dataset, we interpolate the data to avoid them, which is maybe introducing a bias too but we assume that it doesn't change the result in the end. W can also just omit the NaN values, but the difference is negligible. 
+
+Then, we take the fraction of the peaks over a given threshold to perform the EVA.
+
+
+Method 2 : 
+
+We 
+
+
+
+## Check if the method to get peaks over threshold change a lot the selected peaks
+
+```{r}
+data = data_measure
+col_measure = "F010"
+timestep_measure = 1/6
+
+pot_measure <- PoTselect(na.approx(data[[col_measure]]),1,12/timestep_measure)
+plot_extremes(pot_measure,data) + geom_hline(yintercept = -sort(-data[[col_measure]])[round(0.01*nrow(data))],lty='dashed',col='blue')
+print(sum(pot_measure$pot > -sort(-data[[col_measure]])[round(0.01*nrow(data))]))
+
+pot_measure <- PoTselect(na.approx(data[[col_measure]]),0.1,12/timestep_measure)
+plot_extremes(pot_measure,data) + geom_hline(yintercept = -sort(-data[[col_measure]])[round(0.01*nrow(data))],lty='dashed',col='blue')
+print(sum(pot_measure$pot > -sort(-data[[col_measure]])[round(0.01*nrow(data))]))
+
+pot_measure <- PoTselect(na.approx(data[[col_measure]]), sum(na.approx(data[[col_measure]]) > -sort(-data[[col_measure]])[round(0.01*nrow(data))])/nrow(data),12/timestep_measure)
+plot_extremes(pot_measure,data)
+print(length(pot_measure$pot))
+
+```
+
+we see that for a big threshold, the select the same number of peaks, but for a lower threshold, we don't take the same peaks.
+
+
+# Mean Residual life
+
+
+```{r}
+
+
+data <- na.approx(data_measure$F010)
+
+# Candidate thresholds
+thresholds <- seq(min(data), max(data), length.out = 100)
+
+# Calculate MRL
+mrl_values <- mean_residual_life(data, thresholds)
+
+# Plot MRL
+plot(thresholds, mrl_values, type = "l", xlab = "Threshold", ylab = "Mean Residual Life",
+     main = "Mean Residual Life Plot")
+```
+
+The MRL plot shows a decreasing trend as thresholds increase. It suggests that the mean of exceedances decreases as the threshold becomes larger. This could indicate that extreme events are less frequent or severe as the threshold for defining extremes increases.
+
+We see a plateau or stabilization in the MRL plot between 10 m/s and 17 m/s suggesting that the mean of exceedances stabilizes or changes less as the threshold increases. This might indicate a region where the data behaves more consistently with respect to extreme values. 
+
+
+
+
+# Stability plots
+
+
+
+
+
+
+
+
+
+```{r,results='hide'}
+tailindexplotwithBM(data_measure,12*6)
+
+# tailindexplotwithBM(data_KNW,12)
+
+tailindexplotwithBM(data_RACMO,4)
+```
+Here, we look at sample fractions of the peaks of the 10% highest values and not the peaks for sample fractions of the 10% dataset, so in the end, the threshold will not be 1% of the whole dataset but less.
+
+
+```{r,results='hide'}
+pot_model <- PoTselect(RACMO_Schiphol[['F010']],0.1,12/3)
+l0_model <- round(10^(seq(-3,0,length.out=50))*length(pot_model$pot))-1
+fit_model <- FitGP_MLE2(pot_model$pot, 1, N= 0, r11= 1, l0= l0_model,metadata = list(label="RACMO"))
+
+
+tailindexplot_2(list(fit_model))
+
+# Function to constrain the tail index parameter in the estimation
+i = which.min(fit_model$l-round(0.02*length(pot_model$pot)))
+fixedpar = list(gamma0 = fit_model$tailindex[i],gamma0Std = fit_model$tailindexStd[i])
+
+# Compute scale and loc for original and tail_index model estimated
+
+
+pot_measure <- PoTselect(data_Schiphol[['FFnoise']],0.1,12*6)
+l0_measure <- round(10^(seq(-2,0,length.out=50))*length(pot_measure$pot))-1
+fit_measure <- FitGP_MLE2(pot_measure$pot, 1, N= 0, r11= 1, l0= l0_measure,metadata = list(label="measure"))
+fit_measure_model <- FitGP_MLE2(pot_measure$pot, 1, N= 0,fixedpar = fixedpar, r11= 1, l0= l0_measure,metadata = list(label="measure + fixed tailindex"))
+
+tailindexplot_2(list(fit_measure,fit_measure_model),parameter = "scale",fix_y = TRUE)
+  
+```
+We look at the scale of the measurements fit, with the tail estimated on RACMO. 
+
+
+```{r,results='hide'}
+westpot = WSEst_model_to_measure_POT(data_RACMO,data_measure,col_model = 'F010', col_measure ='F010', timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1)
+
+print(westpot$gg)
+
+print(westpot$df[seq(1,nrow(westpot$df),length.out=4),])
+
+```
+
+# Stability plot to select threshold
+
+```{r,results='hide'}
+data_model <- data_RACMO
+# data_measure
+col_model='w10m'
+col_measure='F010'
+timestep_model=3
+timestep_measure=1/6
+th_model=NULL
+th_measure=NULL
+
+pot_model <- PoTselect(data_model[[col_model]],0.1,12/timestep_model)
+l0_model <- round(10^(seq(-3,0,0.05))*length(pot_model$pot))-1
+fit_model <- FitGP_MLE2(pot_model$pot, 1, N= 0, r11= 1, l0= l0_model)
+
+selected = tailindexplot_2(list(fit_model),selected_threshold = TRUE,parameter = 'tail')
+print(selected$gg)
+
+# Function to constrain the tail index parameter in the estimation
+fixedpar = list(gamma0 = selected$selected['tail'],gamma0Std = selected$selected['sd'])
+
+# Compute scale and loc for original and tail_index model estimated
+
+
+pot_measure <- PoTselect(data_Cabauw[[col_measure]],0.1,24/timestep_measure)
+l0_measure <- round(10^(seq(-2,0,0.05))*length(pot_measure$pot))-1
+fit_measure <- FitGP_MLE2(pot_measure$pot, 1, N= 0, r11= 1, l0= l0_measure)
+fit_measure_model <- FitGP_MLE2(pot_measure$pot, 1, N= 0,fixedpar = fixedpar, r11= 1, l0= l0_measure)
+
+
+
+tailindexplot_2(list(fit_measure),selected_threshold = T)
+tailindexplot_2(list(fit_measure_model),parameter = 'scale')
+
+
+```
+
+```{r}
+y = diff(fit_model$tailindex,lag=1)
+plot(pseudo_log(y,threshold = 10^-3))
+abline(v=which(abs(y)<10^(-4)))
+abline(h=pseudo_log(c(-10^-5,0,10^-5),threshold = 10^-3),lty='dashed')
+```
+```{r}
+test = abs(cumsum(fit_model$tailindex)/1:length(fit_model$tailindex)-fit_model$tailindex)
+plot(test)
+abline(h=0)
+abline(v=which(test%in%sort(test)[1:3]))
+
+selected = tailindexplot_2(list(fit_measure),selected_threshold = T) 
+
+selected$gg + geom_vline(xintercept = selected$df$p[max(which(test%in%sort(test)[1:3]))],lty=3)
+```
+
+
+
+
+
+
+```{r,results='hide'}
+rv = data.frame()
+thrs= 10^seq(log10(0.007),0,length.out=10)
+for (i in thrs){
+  print(i)
+  rv = rbind(rv,WSEst_model_to_measure_GW(data_RACMO,data_Cabauw,col_model = 'w10m', col_measure ='F010', timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = i)$df)
+}
+# rv <- rv[names(rv)!='return']
+rv$thrs = rep(thrs,each = 30)
+ggplot(rv,aes(x=thrs,y=model_est,z=return,colour=thrs))+
+  scale_x_log10()+
+  # geom_point(col = 'red')+
+  # geom_line(col='red')+
+  # geom_ribbon(aes(ymin=lb_o,ymax=ub_o),col="red",alpha=0.2)+
+  geom_point()+
+  geom_line()+
+  geom_ribbon(aes(ymin=lb,ymax=ub),alpha=0.2)
+
+```
+
+
+
+```{r}
+
+# Example data (assuming 'rv' dataframe is already defined)
+x <- unique(rv$thrs)
+y <- rv$return[1:30]
+rv$return = y
+
+# Prepare matrices for z, zlb, and zub
+z <- rv %>%
+  select(return, thrs, model_est) %>%
+  pivot_wider(names_from = return, values_from = model_est) %>%
+  select(-thrs) %>%
+  as.matrix() %>%
+  t()
+
+zlb <- rv %>%
+  select(return, thrs, lb) %>%
+  pivot_wider(names_from = return, values_from = lb) %>%
+  select(-thrs) %>%
+  as.matrix()%>%
+  t()
+
+zub <- rv %>%
+  select(return, thrs, ub) %>%
+  pivot_wider(names_from = return, values_from = ub) %>%
+  select(-thrs) %>%
+  as.matrix()%>%
+  t()
+
+# Create the 3D surface plot with single colors for each surface
+plot <- plot_ly(x = ~x, y = ~y, z = ~z, type = "surface", opacity = 1, name = 'Model Estimate') %>%
+  add_surface(z = ~zlb, opacity = 0.2, name = 'Lower Bound', colorscale = list(c(0, 1), c("green", "green"))) %>%
+  add_surface(z = ~zub, opacity = 0.2, name = 'Upper Bound', colorscale = list(c(0, 1), c("green", "green"))) %>%
+  layout(scene = list(
+    xaxis = list(title = 'thrs', type = 'log'),
+    yaxis = list(title = 'return', type = 'log'),
+    zaxis = list(title = 'model_est')
+  ))
+
+# Add grid lines
+plot <- plot %>%
+  add_mesh(x = ~x, y = ~y, z = ~z, opacity = 1, color = 'black') %>%
+  add_mesh(x = ~x, y = ~y, z = ~zlb, opacity = 0.1, color = 'black') %>%
+  add_mesh(x = ~x, y = ~y, z = ~zub, opacity = 0.1, color = 'black')
+
+
+# Display the plot
+plot
+```
+
+
+
+
+# stability plot model and measure
+
+```{r}
+
+```
+
+
+
+# Weibull
+
+```{r,results='hide'}
+X <- PoTselect(data_measure$F010,0.1,6*12)
+print(length(X$pot))
+
+
+
+# f = 0.02 #1/50 year-1 
+# EI = length(X$pot)/sum(data_measure$F010>min(X$pot,na.rm=T),na.rm=T)
+# d = 10 #min
+# p = f*d/EI
+
+
+out = FitGW_iHilli(X$pot,p=1)
+
+gg = tailindexplot_2(list(out))$gg
+# 
+tailindexplot_2(list(out),parameter = 'all')
+
+test = selectThresholdP1(out$tailindex,out$tailindexStd,out$k)
+
+index = round(0.1*length(X$pot))
+
+print(index)
+print(length(X$pot))
+print(index/length(X$pot))
+
+print(out$tailindex[index])
+
+gg + geom_vline(xintercept = out$k[index]/length(X$pot)) + geom_hline(yintercept = out$tailindex[index])
+
+
+
+
+
+ecdf_test = ecdf(-sort(-X$pot))
+xrange = range(X$pot)
+xrange = seq(xrange[1],xrange[2],length.out = 100) 
+
+plot(xrange,ecdf_test(xrange),
+     main="ECDF measurements GW")
+lines(xrange,cgw(xrange,loc = out$location[index],scale = out$scale[index],tail = out$tailindex[index],y = out$y[index]),col='red')
+abline(v=-sort(-X$pot)[index])
+legend("bottomright",col=c("black","red"),lty = c(1,1),legend = c("ecdf","GW fit"))
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+data <- data_measure
+timestep = 1/6
+threshold = 0.1
+  
+  pot <- PoTselect(na.approx(data$F010),0.1,12/timestep)
+  l0 <- round(threshold*length(pot$pot))-1
+  pot_fit <- FitGW_iHill(pot$pot,p=1,l0 = l0)
+  
+  
+  timestep_selected_peaks = mean(diff(pot$ind)*timestep/(24*365.2425)) # mean of the timediff between each peak
+  
+  
+  points <- data.frame(speed = sort(pot$pot))
+  points$p <- seq(0,1-1/length(points$speed),length.out=length(points$speed))     # observed Values
+  points$used <- 1-points$p <= l0/length(pot$pot)
+  points$return <- timestep_selected_peaks / (1- points$p)
+
+  
+  print(ggplot(points,aes(x=speed,y=p,color=used))+geom_line()+geom_point()+scale_color_manual(name="",values = c('TRUE'='black','FALSE'='lightgrey')))
+  
+  
+  tail <- list(mean=pot_fit$tailindex,sd=pot_fit$tailindexStd)
+  scale <- list(mean=pot_fit$scale,sd=pot_fit$logdispStd)
+  loc <- list(mean=pot_fit$location,sd=pot_fit$locationStd)
+  
+  X <- 10^seq(log10(timestep_selected_peaks*length(pot$pot)/l0),log10(10000),length.out = 30)
+  
+
+  
+  distrib = qgw_distrib(1-timestep_selected_peaks/X,tail = tail,scale = scale,loc = loc,y=pot_fit$y)
+  
+  
+  df <- data.frame(
+    return = X,
+    original = distrib$mean,
+    lb = distrib$lb,
+    ub = distrib$ub
+  )
+  
+  
+  gg = ggplot(df, aes(x = return)) +
+    geom_line(aes(x=return,y=original),col='red') +
+    geom_ribbon(aes(ymin=lb,ymax=ub),col='red',alpha=0.2)+
+    geom_point(data=points,aes(x = return,y = speed,color=used)) +
+    geom_vline(xintercept = timestep_selected_peaks*length(pot$pot)/l0,lty='dashed',alpha=0.3)+
+    scale_x_log10(labels= scales::comma) +
+    labs(x = 'Return Period (years)',
+         y = 'Wind Speed (m/s)',
+         title = paste0('Estimated wind speed for return period until 10000 years,\nPoT: ',threshold*100,'% of the peaks')) +
+    theme(legend.position = "right")+
+    scale_color_manual(name="",values = c('TRUE'='black','FALSE'='lightgrey'))
+  gg
+```
+
+
+```{r,results='hide'}
+# WSEst_model_to_measure_BM(data_RACMO,data_measure,col_model = 'F010')$gg
+WSEst_model_to_measure_GW(data_RACMO,data_measure,col_model = 'F010', col_measure ='F010', timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1)$gg
+WSEst_model_to_measure_POT(data_RACMO,data_measure,col_model = 'F010', col_measure ='F010', timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1)$gg
+
+
+```
+
+
+
+
+
+
+
+
+# treatment before analysis
+
+```{r}
+dowJones_transform = function (x){
+  return(log(x[2:length(x)])-log(x[1:length(x)-1]))
+}
+
+inv_DJ = function(xb,x){
+    for (i in 1:length(xb)){
+      print(x[1]*exp(xb[length(x)]))
+      x <- c(x[1]*exp(xb[length(x)]),x)
+    }
+  return(rev(x))
+  }
+
+# test = dowJones_transform(c(1,2,3,2))
+# 
+# inv_DJ(test,1)
+# 
+# 
+# 
+# 
+# DJ_measure = dowJones_transform(na.approx(data_measure$F010[data_measure$F010!=0]))
+
+
+
+data <- pot1$pot
+
+
+
+timestep = 3
+threshold = 0.1 
+
+
+# plot(DJ_measure)
+hist(data)
+
+
+# Candidate thresholds
+thresholds <- seq(min(data), max(data), length.out = 100)
+
+frq = sapply(thresholds,function(t) sum(data>t))/length(data)
+
+
+# Calculate MRL
+mrl_values <- mean_residual_life(data, thresholds)
+
+# Plot MRL
+plot(frq, mrl_values, type = "l", xlab = "Threshold", ylab = "Mean Residual Life",
+     main = "Mean Residual Life Plot",log = 'x')
+
+```
+
+```{r}
+
+
+
+  pot <- PoTselect(na.approx(data),0.1,12/timestep)
+  l0 <- round(threshold*length(pot$pot))-1
+  pot_fit <- FitGW_iHill(pot$pot,p=1,l0 = l0)
+  
+  
+  timestep_selected_peaks = mean(diff(pot$ind)*timestep/(24*365.2425)) # mean of the timediff between each peak
+  
+  
+  points <- data.frame(speed = log(sort(pot$pot))*mdd-mdd)
+  points$p <- seq(0,1-1/length(points$speed),length.out=length(points$speed))     # observed Values
+  points$used <- 1-points$p <= l0/length(pot$pot)
+  points$return <- timestep_selected_peaks / (1- points$p)
+
+  
+  print(ggplot(points,aes(x=speed,y=p,color=used))+geom_line()+geom_point()+scale_color_manual(name="",values = c('TRUE'='black','FALSE'='lightgrey')))
+  
+  
+  tail <- list(mean=pot_fit$tailindex,sd=pot_fit$tailindexStd)
+  scale <- list(mean=pot_fit$scale,sd=pot_fit$logdispStd)
+  loc <- list(mean=pot_fit$location,sd=pot_fit$locationStd)
+  
+  X <- 10^seq(log10(timestep_selected_peaks*length(pot$pot)/l0),log10(10000),length.out = 30)
+  
+
+  
+  distrib = qgw_distrib(1-timestep_selected_peaks/X,tail = tail,scale = scale,loc = loc,y=pot_fit$y)
+  
+  
+  df <- data.frame(
+    return = X,
+    original = log(distrib$mean)*mdd-mdd,
+    lb = log(distrib$lb)*mdd-mdd,
+    ub = log(distrib$ub)*mdd-mdd
+  )
+  
+  
+  gg = ggplot(df, aes(x = return)) +
+    geom_line(aes(x=return,y=original),col='red') +
+    geom_ribbon(aes(ymin=lb,ymax=ub),col='red',alpha=0.2)+
+    geom_point(data=points,aes(x = return,y = speed,color=used)) +
+    geom_vline(xintercept = timestep_selected_peaks*length(pot$pot)/l0,lty='dashed',alpha=0.3)+
+    scale_x_log10(labels= scales::comma) +
+    labs(x = 'Return Period (years)',
+         y = 'Wind Speed (m/s)',
+         title = paste0('Estimated wind speed for return period until 10000 years,\nPoT: ',threshold*100,'% of the peaks')) +
+    theme(legend.position = "right")+
+    scale_color_manual(name="",values = c('TRUE'='black','FALSE'='lightgrey'))
+  gg
+
+WSEst_GW(data_RACMO,timestep = timestep,threshold = threshold)$gg
+```
+
+
+
+
+
+# tests
+
+```{r,results='hide'}
+WSEst_POT(data_measure,timestep = 1/6,threshold = 0.1)
+```
+
+
+
+```{r,results='hide'}
+WSEst_BM(bootstrap(data_measure,Nb=100,method='BM'),data = data_measure)$gg
+```
+
+
+
+```{r}
+pot_measure <- PoTselect(na.approx(data_measure$F010),1,6*12)
+
+timestep_POT_measure <- mean(diff(pot_measure$ind)*timestep_measure/(24*365.2425)) # mean of the timediff between each peak
+  
+timestep_POT_measure*length(pot_measure$pot)
+
+```
+
+```{r}
+test = bootstrap(Cabauw_RACMO,Nb=100,method='BM',column = "w10m")
+
+
+cor(test$df)
+print(cor.test(test$df$tail,test$df$loc))
+print(cor.test(test$df$tail,test$df$scale))
+print(cor.test(test$df$loc,test$df$scale))
+
+
+```
+
+
+
+```{r,results='hide'}
+
+# Generate Data for Different Thresholds
+data <- list()
+points <- list()
+for (threshold in seq(1, 0.006, length.out = 100)) {
+    result <- WSEst_POT(data_measure, timestep = 1/6, threshold = threshold)
+    data[[as.character(threshold)]] <- result$df
+    points[[as.character(threshold)]] <- result$points
+}
+
+# Combine Data Frames with an Additional Column for Threshold
+combined_data <- bind_rows(lapply(names(data), function(threshold) {
+  df <- data[[threshold]]
+  df$threshold <- as.factor(threshold)
+  return(df)
+}))
+
+combined_points <- bind_rows(lapply(names(points), function(threshold) {
+  df <- points[[threshold]]
+  df$threshold <- as.factor(threshold)
+  return(df)
+}))
+
+# Create the Animated Plot
+gg <- ggplot(combined_data,aes(x = return, y = original)) +
+    geom_line(col = 'red') +
+    geom_ribbon(aes(ymin = lb, ymax = ub), fill = 'red', alpha = 0.2) +
+    geom_point(data = combined_points, aes(x = return, y = speed, color = as.factor(used))) +
+    geom_vline(data = combined_points[combined_points$used,], aes(xintercept = min(return)), lty = 'dashed', alpha = 0.3) +
+    scale_x_log10(labels = scales::comma) +
+    labs(x = 'Return Period (years)',
+         y = 'Wind Speed (m/s)',
+         title = 'PoT: {closest_state}') +
+    theme(legend.position = "right") +
+    scale_color_manual(name = "", values = c('TRUE' = 'black', 'FALSE' = 'lightgrey'))
+
+
+# Animate the Plot
+animated_plot <- gg + transition_states(threshold, transition_length = 10, state_length = 1) + ease_aes('linear')
+
+# Preview the Animation in RStudio
+animate(animated_plot, renderer = gifski_renderer())
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r,results='hide'}
+
+# Generate Data for Different Thresholds
+data <- list()
+points <- list()
+for (threshold in seq(1, 0.006, length.out = 100)) {
+    print(threshold)
+    result <- WSEst_model_to_measure_GW(data_RACMO,data_measure,col_model = 'F010', col_measure ='F010', timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = threshold)
+    data[[as.character(threshold)]] <- result$df
+    points[[as.character(threshold)]] <- result$points
+}
+
+# Combine Data Frames with an Additional Column for Threshold
+combined_data <- bind_rows(lapply(names(data), function(threshold) {
+  df <- data[[threshold]]
+  df$threshold <- as.factor(threshold)
+  return(df)
+}))
+
+combined_points <- bind_rows(lapply(names(points), function(threshold) {
+  df <- points[[threshold]]
+  df$threshold <- as.factor(threshold)
+  return(df)
+}))
+
+# Create the Animated Plot
+  gg <- ggplot(combined_data, aes(x = return)) +
+    geom_line(aes(y = model_est, color = 'shape estimated with model')) +
+    geom_ribbon(aes(ymin = lb, ymax = ub, fill = 'Confidence Interval, 95%'), alpha = 0.2) +
+    # geom_point(data = points, aes(y = speed, color=used,shape = 'Measurements observed')) +
+    # geom_line(data = df_measure, aes(y = original, color = 'all parameters estimated\nfrom measurements')) +
+    # geom_line(data = df_measure, aes(y = lb), lty = 'dashed', color = "red") +
+    # geom_line(data = df_measure, aes(y = ub), lty = 'dashed', color = "red") +
+    scale_x_log10(labels = scales::comma) +
+    # ylim(range(c(df$original, df$model_est, df$lb, df$ub, points$speed))) +
+    labs(x = 'Return Period (years)', y = 'Return Wind Speed (m/s)', title = paste0('Estimated wind speed for return period until 10000 years,\nPoT + GW, on measurements')) +
+    scale_color_manual(values = c('shape estimated with model' = custom_color, 'all parameters estimated\nfrom measurements' = 'red','TRUE'='black','FALSE'='lightgrey')) +
+    scale_fill_manual(values = c('Confidence Interval, 95%' = custom_color)) +
+    theme(legend.position = "right")+
+    scale_color_manual(name = "", values = c('TRUE' = 'black', 'FALSE' = 'lightgrey'))
+
+
+# Animate the Plot
+animated_plot <- gg + transition_states(threshold, transition_length = 20, state_length = 1) + ease_aes('linear')
+
+# Preview the Animation in RStudio
+animate(animated_plot, renderer = gifski_renderer())
+
+```
+
+
+
+
+
+```{r,results='hide'}
+test = c(1,2,1,3,4,5,1,5,5,5,5,5,5,6,7,8,5,4,5,3,2,1,4,5,7,5,4,12,4)
+
+
+threshold <- 0.8
+
+plot(test)
+lines(test)
+abline(h = sort(test,decreasing = TRUE)[round(threshold*length(test))])
+
+
+pot_test = PoTselect(test,threshold,2)
+
+
+pot_test_2 = PoTselect_2(test,threshold,2)
+
+
+points(pot_test$ind,pot_test$pot,col='red',pch=2)
+points(pot_test_2$ind, pot_test_2$pot,col='blue',pch=3)
+```
+
+
+
+
+```{r,results='hide'}
+WSEst_POT_2(data_RACMO,timestep = 3,threshold = 0.1)$gg
+WSEst_POT(data_RACMO,timestep = 3,threshold = 0.1)$gg
+```
+
+```{r}
+data = na.approx(data_measure$F010)
+pot_test = PoTselect(data,0.1,12)
+
+
+pot_test_2 = PoTselect_2(data,0.1,12)
+print(length(pot_test$ind))
+print(length(pot_test_2$ind))
+
+sum(pot_test$ind == pot_test_2$ind)
+
+fmw = find_max_window(data,pot_test_2$ind,10000)
+# print(fmw$max_count)
+
+plot(data,xlim=c(43500,43620))
+abline(h = 7.46,col='red')
+lines(data)
+points(pot_test$ind,pot_test$pot,col='red',pch=2)
+points(pot_test_2$ind, pot_test_2$pot,col='blue',pch=3)
+
+```
+
+
+
+
+
+
+```{r}
+pot1 = PoTselect(na.approx(data_measure$F010),p = 0.1,separation = 6*12)
+pot2 = PoTselect_2(na.approx(data_measure$F010),p = 0.1,separation = 6*12)
+
+
+# Filter data using pot1$ind
+filtered_data <- data_measure[pot1$ind, ]
+
+# Extract month and day, and combine into a single "year"
+combined_date <- make_date(year = 2000 - filtered_data$Year+year(filtered_data$DateTime), # Arbitrary non-leap year to avoid issues with Feb 29
+                           month = month(filtered_data$DateTime),
+                           day = day(filtered_data$DateTime))
+
+# Plot the histogram
+hist(combined_date,
+     breaks = 6,
+     freq = FALSE,
+     main = "Combined Histogram for All Years in a Single Year",
+     xlab = "Date (Day of Year)",
+     ylab = "Density")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+x <- hist(filtered_data$DateTime,breaks = 19*6)
+
+time <- as.Date(x$mids)
+x <- x$density
+
+print(time)
+print(x)
+
+sampling_rate <- length(x)  # Sampling rate (in Hz)
+
+
+X <- fft(x)[1:floor(sampling_rate/2)]
+
+freq_vector <- seq(0,sampling_rate/2,length.out=floor(sampling_rate/2))
+
+magnitude <- Mod(X)  # Magnitude of the complex DFT coefficients
+
+# Sort magnitudes in descending order
+sorted_indices <- order(magnitude, decreasing = TRUE)
+top_n <- 4  # Example: Get top 3 frequencies
+
+# Get the top frequencies and their magnitudes
+top_freqs <- freq_vector[sorted_indices[1:top_n]]
+top_magnitudes <- magnitude[sorted_indices[1:top_n]]
+
+
+
+plot(freq_vector, magnitude, type = "l", xlab = "Frequency (Hz)", ylab = "Magnitude",log = "x")
+
+
+
+
+# Initialize an empty vector for reconstructed signal
+X_reconstructed <- complex(0, 0, length = length(x))
+
+# Find indices of top frequencies in frequency vector
+indices <- sapply(top_freqs, function(f) {
+  which.min(abs(freq_vector - f))
+})
+
+# Set corresponding DFT coefficients in reconstructed signal
+X_reconstructed[indices] <- X[indices]
+
+x_reconstructed <- Re(fft(X_reconstructed, inverse = TRUE)) / length(x)
+
+plot(time, x, type = "l", col = "blue", ylim = range(x, x_reconstructed),
+     xlab = "Time", ylab = "Amplitude", main = "Original vs Reconstructed Signal")
+lines(time, x_reconstructed, col = "red")
+legend("topright", legend = c("Original", "Reconstructed"), col = c("blue", "red"), lty = 1)
+```
+
+
+
+
+
+
+# test poisson process
+
+```{r}
+
+poiprocess <- function(lam,T){
+  s <- 0.0
+  l <- c()
+  while (s<T){
+    x <- rexp(1,rate=lam)
+    s <- s+x
+    l <- c(l,s)
+  }
+  return(l[1:length(l)-1])
+}
+
+
+print(poiprocess(1.5,10))
+
+
+
+pot1 = PoTselect(na.approx(data_Schipol$FF),p = 0.1,separation = 12)
+pot2 = PoTselect_2(na.approx(data_Schipol$FF),p = 0.1,separation = 12)
+
+
+lam = mean(diff(data_Schipol$DateTime[pot1$ind]))
+lam = as.numeric(lam,units='days')/365.2425
+plot(ecdf(diff(pot2$ind)))
+x = seq(0,2000)
+lines(x,1-exp(-lam*x),col='red')
+
+plot(1-exp(-lam*x),ecdf(diff(pot1$ind))(x))
+lines(x,x,col='red',lty='dashed')
+
+
+base_date = min(data_Schipol$DateTime[pot1$ind])
+
+x<- data_Schipol$DateTime[pot1$ind]
+plot(x,1:length(x),type='s')
+
+s= base_date + days(poiprocess(1/lam,18))
+
+plot(s,1:length(s),type='s')
+
+
+length(s)
+length(pot1$pot)
+```
+
+
+
+
+
+
+
+
+
+
+
+

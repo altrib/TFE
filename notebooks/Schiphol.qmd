@@ -1,0 +1,370 @@
+---
+title: "Extreme value analysis at Schipol location"
+author: "Alexandre Tribut"
+date: July 25, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+```{r,echo=FALSE}
+source('../tools.R')
+```
+```{r,echo=FALSE}
+data_Schiphol <- read.csv("../../../Data/Data_Schiphol/dataSchiphol.csv")
+data_Schiphol$DateTime = ymd_hms(data_Schiphol$DateTime)
+data_Schiphol = data_Schiphol[data_Schiphol$Year > min(data_Schiphol$Year) & data_Schiphol$Year < max(data_Schiphol$Year),]
+
+sigma = sd(data_Schiphol$FF)*0.1
+data_Schiphol$FFGaussNoise = data_Schiphol$FF + rnorm(length(data_Schiphol$FF), mean = 0, sd = sigma)
+data_Schiphol$FFGaussNoise[data_Schiphol$FFGaussNoise<0] <- 0
+
+I = max(diff(sort(data_Schiphol$FF)))
+
+data_Schiphol$FFUnifNoise = data_Schiphol$FF + runif(length(data_Schiphol$FF), min = -I/2, max = I/2)
+data_Schiphol$FFUnifNoise[data_Schiphol$FFUnifNoise<0] <- 0
+
+
+RACMO_Schiphol <- read.csv("../../../Data/Data_RACMO/Schiphol/RACMO_Schiphol.csv")
+RACMO_Schiphol$DateTime = ymd_hms(RACMO_Schiphol$DateTime)
+RACMO_Schiphol = RACMO_Schiphol[RACMO_Schiphol$Year > min(RACMO_Schiphol$Year) & RACMO_Schiphol$Year < max(RACMO_Schiphol$Year),]
+```
+
+
+# BM test independence
+```{r}
+bm <- BM_select(data_Schiphol,height = 'FFUnifNoise',)
+acf(bm$max,lag.max = 2000)
+Box.test(bm$max, type="Ljung-Box",lag= 8)
+```
+> We see with this test that BM on Schiphol dataset have good independence.
+
+
+# PoT independence
+
+```{r,results='hide'}
+winter = month(Cabauw_RACMO$DateTime) %in% c(10:12,1:3)
+ws_measure <- na.approx(Cabauw_RACMO$w10m[winter])
+
+pot = PoTselect_2(data = ws_measure,p = 0.3,separation = 4)
+
+
+idx = order(-pot$pot)
+
+test = round(10^seq(-2,0,length.out=1000)*length(idx))
+lbtest = c()
+for (i in test){
+  # plot(pot$pot[sort(idx[1:i])],main = paste(100*i/length(idx),"% of the data"))
+  # acf(pot$pot[sort(idx[1:i])],lag.max = 2000,main = paste(100*i/length(idx),"% of the data"))
+  lbtest = c(lbtest,Box.test(pot$pot[sort(idx[1:i])], type="Ljung-Box",lag=sqrt(i))$p.val)
+}
+plot(test/length(idx),lbtest,xlab = "sample fraction",ylab = 'p-value',log = "x",main = "p-value of the Ljung-Box test on\nthe PoT sample for different sample fractions")
+abline(h = 0.05,lty='dashed',col='blue')
+
+```
+Taking 10% of the peaks or less gives us quiet good independence.
+
+# Stability plot
+
+## Generalized Pareto
+
+### stability with dataset fraction
+#### Measurements
+
+```{r,results='hide'}
+tailindexplot_col(data_Schiphol,12,columns = c("FFGaussNoise","FFGaussNoise","FFGaussNoise","FFGaussNoise"),fraq_min = 2,fix_y = c(-0.25,0.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter=T)
+```
+
+> Why truncate the dataset on only winter values ?
+
+The idea is that the distribution is more stationary over the winter season. With all-year, you have a mixture between less stormy summer weather and more stormy winter weather. The idea is that the tail would converge faster to a limiting shape than when you have a mixture of 2 tails (the heaviest tail will eventually dominate when the sample fraction tends to 0, but it takes longer than using already only the winter tail).
+
+
+
+
+#### Weather model
+
+```{r,results='hide'}
+tailindexplot_col(RACMO_Schiphol,4,columns = c("F010","F010","F010","F010"),fraq_min = 2.5,fix_y = c(-0.25,0.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter = T)
+```
+
+
+
+### Stability with tailindex from model
+
+#### Tail index similarity between model and measurements 
+
+We check if the tail index is similar between the model and the measurements to see if it's ok to use the model to estimate the tail. 
+```{r,results='hide'}
+stability_est_GP(data_model = RACMO_Schiphol, data_measure = data_Schiphol, col_model='F010',col_measure='FFUnifNoise', timestep_model=3,timestep_measure=1,fix_y = c(-0.4,0.2), parameter='tail',overlap = T,peak_frac = 0.3,winter = T)$gg  + geom_vline(xintercept = 0.05,lty='dashed')
+```
+
+
+#### Stability of scale estimation 
+
+```{r,results='hide'}
+stability_est_GP(data_model = RACMO_Schiphol, data_measure = data_Schiphol, col_model='F010',col_measure='FFUnifNoise', timestep_model=3,timestep_measure=1,fix_y = T, parameter='scale',overlap = T,peak_frac = 0.3,winter = T,selected = 0.05)$gg + geom_vline(xintercept = 0.05,lty='dashed')
+```
+> Here, the conclusion is that a threshold of 0.05 would be a nice guess.
+
+
+
+
+## GW
+
+### stability with dataset fraction
+#### Measurements
+
+```{r,results='hide'}
+tailindexplot_col(data_Schiphol,12,columns = c("FFGaussNoise","FFGaussNoise","FFGaussNoise","FFGaussNoise"),fraq_min = 2,fix_y = c(0,1.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter=T,method = 'GW')
+```
+
+#### Weather model
+
+```{r,results='hide'}
+tailindexplot_col(RACMO_Schiphol,4,columns = c("F010","F010","F010","F010"),fraq_min = 2.5,fix_y = c(0,1.25),parameter = 'tail',peak_frac = c(0.4,0.3,0.2,0.1),winter=T,method = 'GW')
+```
+
+
+
+### Stability with tail index from model
+
+We check if the tail index is similar between the model and the measurements to see if it's ok to use the model to estimate the tail.
+```{r}
+stability_est_GW(data_model = RACMO_Schiphol, data_measure = data_Schiphol, col_model='F010',col_measure='FFUnifNoise', timestep_model=3,timestep_measure=1,fix_y = T, parameter='tail',overlap = T,peak_frac = 0.3,winter = T)$gg + geom_vline(xintercept = 0.05,lty='dashed')
+```
+
+```{r}
+stability_est_GW(data_model = RACMO_Schiphol, data_measure = data_Schiphol, col_model='F010',col_measure='FFUnifNoise', timestep_model=3,timestep_measure=1,fix_y = T, parameter='scale',overlap = T,peak_frac = 0.3,winter = T,selected = 0.05)$gg + geom_vline(xintercept = 0.05,lty='dashed')
+```
+
+
+
+
+
+# Wind Speed Estimation
+
+```{r,results='hide'}
+BM_sch = WSEst_model_to_measure_BM_4(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFUnifNoise",length.out = 100,cov_type = "analytic")
+GP_sch = WSEst_model_to_measure_GP_4(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFUnifNoise", timestep_model = 3,timestep_measure = 1,th_model = 0.05,th_measure = 0.05,length.out = 0,winter = T)
+GW_sch = WSEst_model_to_measure_GW_2(data_model = RACMO_Schiphol,data_measure = data_Schiphol,col_model = "F010",col_measure = "FFUnifNoise", timestep_model = 3,timestep_measure = 1,th_model = 0.05,th_measure = 0.05,length.out = 0,winter = T)
+```
+
+## Generalized Extreme Value Distribution with Block Maxima Method
+
+```{r}
+print(BM_sch$gg)
+```
+
+## Generalized Pareto Distribution with Peak over Threshold Method
+
+```{r}
+print(GP_sch$gg)
+```
+
+## Generalized Weibull Distribution with Peak over Threshold Method
+
+```{r}
+print(GW_sch$gg)
+```
+
+## parameter distributions
+```{r,eval=FALSE}
+list(BM = BM$parameter_distributions,
+        GP = GP$parameter_distributions,
+        GW = GW$parameter_distributions
+      )
+ 
+```
+
+
+
+# Models Comparison
+
+```{r}
+tail0_BM_sch = WSEst_model_to_measure_BM_4(NULL,data_Schiphol,NULL,"FFUnifNoise",fixtailto0 = T,length.out = 0)$df
+tail0_BM_sch = tail0_BM_sch[,c("return","model_est","lb","ub","sd")]
+names(tail0_BM_sch) = c("return","original","lb","ub","sd")
+
+
+tail0_GP_sch = WSEst_GP_4(data_Schiphol,1,threshold = 0.05,col = "FFUnifNoise",fixtailto0 = T,length.out = 0,winter=T)$df
+tail0_GW_sch = WSEst_GW_2(data_Schiphol,1,threshold = 0.05,col = "FFUnifNoise",fixtailto1 = T,length.out = 0,winter=T)$df
+
+tail0_sch = rbind(cbind(tail0_BM_sch,distrib='GEV'),cbind(tail0_GP_sch,distrib='GP'),cbind(tail0_GW_sch,distrib='GW'))
+tail0_sch$distrib_num <- as.numeric(factor(tail0_sch$distrib, levels = c('GEV', 'GP', 'GW')))
+
+
+
+df_plot_sch <- rbind(cbind(BM_sch$df,distrib='GEV'),cbind(GP_sch$df,distrib='GP'),cbind(GW_sch$df,distrib='GW'))
+
+i50 <- df_plot_sch %>% 
+    slice(which(abs(return - 50)==0))
+
+i100 <- df_plot_sch %>% 
+    slice(which(abs(return - 100)==0))
+
+i1000 <- df_plot_sch %>% 
+    slice(which(abs(return - 1000)==0))
+
+i10000 <- df_plot_sch %>% 
+    slice(which(abs(return - 10000)==0))
+
+df_plot_sch <- rbind(i50,i100,i1000,i10000)
+
+df_plot_sch$distrib_num <- as.numeric(factor(df_plot_sch$distrib, levels = c('GEV', 'GP', 'GW')))
+
+original_sch = cbind(df_plot_sch[c('return',"original",'lb_o','ub_o','sd_o',"distrib","distrib_num")],group = 'All parameters estimated from measurements')
+model_est_sch = cbind(df_plot_sch[c('return',"model_est",'lb','ub','sd',"distrib","distrib_num")],group = 'Tail index estimated with RACMO')
+tail0_sch = cbind(tail0_sch,group = 'Tail index fixed to Gumbel')
+
+colnames(original_sch)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+colnames(model_est_sch)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+colnames(tail0_sch)=c('return',"val",'lb','ub','sd',"distrib","distrib_num","group")
+
+df_plot_sch = rbind(original_sch,model_est_sch,tail0_sch)
+
+
+# Plot with vertical dodge
+ggplot(df_plot_sch, aes(y = distrib_num,colour = group)) +
+  facet_wrap(~return, scales = "fixed") + 
+  geom_pointrange(aes(x = val, xmin = lb, xmax = ub),
+                  size = 0.2,
+                  position = ggstance::position_dodge2v(0.3)) +
+  scale_y_continuous(breaks = 1:3, labels = c('GEV', 'GP', 'GW')) +
+  labs(x = 'Wind speed (m/s)', y = 'Distribution', color = 'Legend') +
+  theme(legend.position = "bottom")+
+  xlim(c(15,60))+
+  guides(colour = guide_legend(nrow = 2))
+```
+
+
+```{r}
+library(dplyr)
+library(kableExtra)
+
+formatted_df = df_plot_sch[,c('return','distrib','group','val','lb','ub','sd')] %>%
+  arrange(return, distrib, group) %>%
+  group_by(return, distrib) %>%
+  mutate(across(c(val, lb, ub), ~ round(., 2))) %>%
+  ungroup()
+
+formatted_df
+# Create the LaTeX table using kableExtra
+latex_table = kable(formatted_df, format = "latex", booktabs = FALSE, escape = FALSE, align = "lclccccc") %>%
+  kable_styling(latex_options = c("repeat_header"))
+cat(latex_table)
+```
+```{r}
+
+df_plot_cbw_sch = rbind(df_plot %>% mutate(loc = 'Cabauw'),df_plot_sch %>% mutate(loc='Schiphol')) %>%
+  mutate(loc_num = as.numeric(factor(.data$loc))) %>%
+  filter(distrib == 'GW',return==50) %>%
+  select(return,val,lb,ub,loc,distrib,loc_num,group)
+
+# Plot with vertical dodge
+ggplot(df_plot_cbw_sch, aes(y = loc_num,colour = group)) +
+  # facet_wrap(~return, scales = "fixed") + 
+  geom_pointrange(aes(x = val, xmin = lb, xmax = ub),
+                  size = 0.2,
+                  position = ggstance::position_dodge2v(0.3)) +
+  scale_y_continuous(breaks = 1:2, labels = unique(df_plot_cbw_sch$loc)) +
+  labs(x = 'Wind speed (m/s)', y = 'Tail', color = 'Legend') +
+  theme(legend.position = "bottom")+
+  # xlim(c(15,60))+
+  guides(colour = guide_legend(nrow = 2))
+
+df_plot_cbw_sch
+```
+
+
+
+
+# Save results for matlab
+```{r,eval=FALSE}
+out <- as.list(BM$df[c('return','proba','original','sd_o','model_est','sd')])
+out$points <- BM$points
+out$timedelta <- 1
+writeMat("../../../DATA_for_Laurine/GEV_Schiphol_est.mat", GEV_est = out)
+
+out <- as.list(GP$df[c('return','proba','original','sd_o','model_est','sd')])
+out$points <- GP$points
+out$timedelta <- GP$timestep
+writeMat("../../../DATA_for_Laurine/GP_Schiphol_est.mat", GP_est = out)
+
+out <- as.list(GW$df[c('return','proba','original','sd_o','model_est','sd')])
+out$points <- GW$points
+out$timedelta <- GW$timestep
+writeMat("../../../DATA_for_Laurine/GW_Schiphol_est.mat", GW_est = out)
+```
+
+
+
+# errors
+
+```{r}
+errors_in = data.frame(rbind(rbind(apply(abs(tail0_BM_sch[,2:4]-BM_sch$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_BM_sch[,2:4]-BM_sch$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(BM_sch$df[,c('original','lb_o','ub_o')]-BM_sch$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(tail0_GP_sch[,2:4]-GP_sch$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_GP_sch[,2:4]-GP_sch$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GP_sch$df[,c('original','lb_o','ub_o')]-GP_sch$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(tail0_GW_sch[,2:4]-GW_sch$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(tail0_GW_sch[,2:4]-GW_sch$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GW_sch$df[,c('original','lb_o','ub_o')]-GW_sch$df[,c('model_est','lb','ub')]),1,mean))))
+
+colnames(errors_in) <- BM_sch$df$return
+errors_in$error_tail <- rep(c("Gumbel - RACMO","Gumbel - Measurements","Measurements - RACMO"),3)
+errors_in$distrib <- rep(c("GEV","GP","GW"),each=3)
+errors_in <- errors_in %>% mutate_if(is.numeric,round, digit=2) 
+errors_in
+
+
+
+
+
+errors_out = data.frame(rbind(rbind(apply(abs(tail0_BM_sch[,2:4]-tail0_GP_sch[,2:4]),1,mean),
+apply(abs(tail0_BM_sch[,2:4]-tail0_GW_sch[,2:4]) ,1,mean),
+apply(abs(tail0_GP_sch[,2:4]-tail0_GW_sch[,2:4]),1,mean)),
+
+rbind(apply(abs(BM_sch$df[,c('model_est','lb','ub')]-GP_sch$df[,c('model_est','lb','ub')]),1,mean),
+apply(abs(BM_sch$df[,c('model_est','lb','ub')]-GW_sch$df[,c('model_est','lb','ub')]) ,1,mean),
+apply(abs(GW_sch$df[,c('model_est','lb','ub')]-GP_sch$df[,c('model_est','lb','ub')]),1,mean)),
+
+rbind(apply(abs(BM_sch$df[,c('original','lb_o','ub_o')]-GP_sch$df[,c('original','lb_o','ub_o')]),1,mean),
+apply(abs(BM_sch$df[,c('original','lb_o','ub_o')]-GW_sch$df[,c('original','lb_o','ub_o')]) ,1,mean),
+apply(abs(GP_sch$df[,c('original','lb_o','ub_o')]-GW_sch$df[,c('original','lb_o','ub_o')]),1,mean))))
+
+colnames(errors_out) <- BM_sch$df$return
+errors_out$error_distrib <- rep(c("GEV - GP","GEV - GW","GP - GW"),3)
+errors_out$tail <- rep(c("Gumbel","RACMO","Measurements"),each=3)
+errors_out <- errors_out %>% mutate_if(is.numeric,round, digit=2) 
+errors_out
+```
+
+
+
+
+
+# Comparison with Cabauw
+
+```{r}
+errors_loc = rbind(apply(abs(BM$df[,c('model_est','lb','ub')]-BM_sch$df[,c('model_est','lb','ub')]),1,mean),
+                   apply(abs(GP$df[,c('model_est','lb','ub')]-GP_sch$df[,c('model_est','lb','ub')]),1,mean),
+                   apply(abs(GW$df[,c('model_est','lb','ub')]-GW_sch$df[,c('model_est','lb','ub')]),1,mean))
+colnames(errors_loc) <- c(50,100,1000,10000)
+rownames(errors_loc) <- c("GEV","GP","GW")
+round(errors_loc,3)
+
+```
+
+
+

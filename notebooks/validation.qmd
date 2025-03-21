@@ -1,0 +1,16 @@
+---
+title: "Assessment of the wind sped extrapolation - which model and method is the best ?"
+author: "Alxandre Tribut"
+date: July 23, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+

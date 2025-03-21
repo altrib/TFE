@@ -1,0 +1,17 @@
+---
+title: "TEsts"
+format: html
+editor: visual
+---
+
+
+
+```{r}
+GW = WSEst_model_to_measure_GW_2(data_model = Cabauw_RACMO,data_measure = Cabauw_measure,col_model = "wgmax",col_measure = "PF010", timestep_model = 3,timestep_measure = 1/6,th_model = 0.1,th_measure = 0.1,tag=1,length.out = 100,winter = T)
+xspan = seq(GW$parameter_distributions$measure$loc$mean,50,length.out=20)
+
+plot(ecdf(PoTselect_2(na.approx(Cabauw_measure$PF010),p = 0.3,separation = 12)$pot))
+lines(xspan, cgw(xspan,loc = GW$parameter_distributions$measure$loc$mean,scale =  GW$parameter_distributions$measure$scale$mean,tail = GW$parameter_distributions$measure$tail$mean,y=GW$parameter_distributions$measure$y),col='red')
+
+```
+

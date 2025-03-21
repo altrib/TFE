@@ -1,0 +1,659 @@
+---
+title: "Extreme Value Analysis - First "
+author: Alexandre Tribut
+date: May 21, 2024
+format:
+    html:
+        code-fold: true
+        fig-width: 8
+        fig-height: 6
+embed-resources: true
+toc: true
+number-sections: true
+execute: 
+  warning: false
+---
+
+This notebook uses R 4.2.2.
+
+
+```{r}
+source('./tools.R')
+```
+
+
+# EVA on measurement data
+
+```{r}
+data_measure <- read.csv("./Data_Cabauw/MEASURED/fulldata10min.csv")
+data_measure$Year = ymd(data_measure$Year)
+data_measure$DateTime = ymd_hms(data_measure$DateTime)
+```
+
+
+## Check data
+
+```{r}
+ggplot(data_measure,aes(x=DateTime,y=F200))+geom_line()
+
+data_measure = data_measure[(data_measure$DateTime >= ymd("2001-07-01") & data_measure$DateTime  < ymd("2019-07-01")) |
+            (data_measure$DateTime >= ymd("1991-07-01") & data_measure$DateTime  < ymd("1997-07-01")) |
+            (data_measure$DateTime >= ymd("1987-07-01") & data_measure$DateTime  < ymd("1989-07-01")) ,]
+
+boxplot(data_measure[, grepl("^F", names(data_measure))],main = "Boxplot of the measurements at Cabauw between 1987 and 2019")
+
+
+data_measure = data_measure[(data_measure$DateTime >= ymd("2001-07-01") & data_measure$DateTime  < ymd("2019-07-01")),]
+
+boxplot(data_measure[, grepl("^F", names(data_measure))],main = "Boxplot of the measurements at Cabauw between 2001 and 2019")
+```
+
+The time serie plot show the 200m height wind speeds. The boxplots show the distribution of wind speed for each heights, firstly for all the complete years and secondly for only data between 2001 and 2020.
+
+We can see that we have some missing data. Furthermore, at 20m, 140m and 200m, (boxplot 1) there are big outliers in the dataset before 2000 and At 200m, there are some negative values. That is strange because the wind values should be absolute. The integrity of the data is not guarantee and we decided to not take in account any data prior to 2000 before the Cabauw team could exactly find out where it came from. 
+
+
+We decided to keep the data between 2001 and 2020 for now.
+
+
+```{r}
+# Create frequency data by grouping by year and counting occurrences
+freq_data <- data_measure %>%
+  group_by(year = lubridate::year(Year)) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+# Plot the data
+ggplot(freq_data, aes(x = year, y = count)) +
+  geom_line() +
+  geom_point(shape = '+') +
+  labs(x = 'Year', y = 'Count') +
+  theme_minimal() +
+  theme(legend.position = 'bottom')
+
+```
+
+we have almost 150 more value for some years but it is ok for the total amount of data.
+The remaining peaks are for the leap years.
+
+
+## Peak over Threshold method (Generalized Pareto fit on measurement data)
+### Test if shape depends on heights
+
+We perform the EVA on the wind speed at 10m. We selected peak with a separation of 12h to avoid clusters (we want not to select multiple peaks for one storm).
+
+
+
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+fraq_min = 3 #10^(-fraq_min)
+timesep = 12*6 # We have a timestep of 10 min so this is 12h separation
+
+Xo <- PoTselect(data_measure$F010,1,timesep)
+
+# plotextreme10m110min = plot_extremes(X,data_measure)
+
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(Xo$pot))
+out10min10m <- FitGP_MLE2(Xo$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 10min sep=12h"))
+
+tailindexplot_2(list(out10min10m))
+# plot_distribution(X,out10min10m)
+```
+We plot the distribution of all thresholds/return_values.
+
+Then We can perform the EVA on all heights and plot the estimation of shape parameter for each height.
+```{r, message=FALSE, warning=FALSE, results='hide'}
+X <- PoTselect(data_measure$F020,1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))-1
+out2 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="20m 10min sep=12h"))
+
+
+X <- PoTselect(data_measure$F040,1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))-1
+out3 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="40m 10min sep=12h"))
+
+X <- PoTselect(data_measure$F080,1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))-1
+out4 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="80m 10min sep=12h"))
+
+
+X <- PoTselect(data_measure$F140,1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))-1
+out5 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="140m 10min sep=12h"))
+
+
+X <- PoTselect(data_measure$F200,1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))-1
+out6 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="200m 10min sep=12h"))
+
+
+tailindexplot_2(list(out10min10m,out2,out3,out4,out5,out6),overlap = FALSE,fix_y = TRUE,parameter = 'all')
+```
+
+
+
+We plot, here, the evolution of the shape parameter estimated from the Peak over Threshold selected sample against the faction fo the intermidiate order statistic. Let n be the length of this sample. On the x-axis, we plot the fraction of order statistics we use to estimate the shape parameter. We use a fraction of k order of statistics and we plot p = k/n. For the estimation in theory, k should tend to infinity but in practice, because n is fixed, k decrease with p. That is why we have a lot of fluctuation after a certain fraction, because we don't estimate the shape with enough order statistics. 
+
+The rupture of the convergence is around a fraction of $10^-1$.
+
+It seems that the shape is almost the same for each heights. and tends to be around 0.
+
+### Test on averaging time
+
+Averaging over 1 hour and 3 hour
+
+```{r,echo=FALSE}
+data1h <- read.csv("./Data_Cabauw/MEASURED/fulldata1h.csv")
+data1h$DateTime = ymd_hms(data1h$DateTime)
+data3h<- read.csv("./Data_Cabauw/MEASURED/fulldata3h.csv")
+data3h$DateTime = ymd_hms(data3h$DateTime)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+X <- PoTselect(data_measure$PF010,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X$pot))
+out3s10m <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="10m 3s gust"))
+
+X <- PoTselect(data1h$F10,0.6,timesep)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X$pot))
+out1h10m <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="10m 1h"))
+
+X <- PoTselect(data3h$F10,0.9,timesep)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X$pot))
+out3h10m <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="10m 3h"))
+
+
+tailindexplot_2(list(out10min10m,out3s10m,out1h10m,out3h10m),overlap = FALSE,fix_y = TRUE)
+```
+
+
+
+
+### Wider separation on PoT selection
+
+In the previous, we chose a separation of 12h between selected data. Now we can look if we choose wider separation between selected data, we have a different result. We can suppose that 12h between each time points can't guaranty the independence, so we want to verify this.
+
+
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+X2h <- PoTselect(data_measure$F010,0.1,timesep/6)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X2h$pot))
+out0 <- FitGP_MLE2(X2h$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 10min sep=2h"))
+
+X1 <- PoTselect(data_measure$F010,0.1,timesep*2)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X1$pot))
+out1 <- FitGP_MLE2(X1$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 10min sep=24h"))
+
+X2 <- PoTselect(data_measure$F010,0.1,timesep*2*3)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X2$pot))
+out2 <- FitGP_MLE2(X2$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 10min sep=72h"))
+
+X3 <- PoTselect(data_measure$F010,0.1,timesep*2*7)
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X3$pot))
+out3 <- FitGP_MLE2(X3$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 10min sep=1week"))
+
+
+tailindexplot_2(list(out0,out10min10m,out1,out2,out3), overlap = FALSE, fix_y = TRUE)
+```
+```{r}
+# Sample data for three datasets
+set.seed(123)  # for reproducibility
+
+# Combine data into a data frame
+df <- data.frame(value = c(Xo$pot,X1$pot, X2$pot, X3$pot),
+                 separation = factor(rep(c("12h","24h", "72h", "1week"), 
+                                      c(length(Xo$pot),length(X1$pot), length(X2$pot), length(X3$pot))),
+                                      levels = c("12h","24h", "72h", "1week")))
+
+# Create histogram using ggplot2
+ggplot(df, aes(x = value, fill = separation)) +
+  geom_histogram(binwidth = 2, position = "identity", alpha = 0.5) +
+  labs(x = "wind speed", y = "count", title = "Histogram of the PoT 3 selections") +
+  theme_minimal()
+
+
+```
+
+The data selected with a threshold but for a wider separation tends to be a block maxima with the size of the separation. We can see it because the histogram of the 1week data doesn't look like a Generalized Pareto (distribution for the PoT method) but look like a Generalized Extreme Value Distribution (distribution for the Block Maxima method).
+
+Indeed, selecting peaks with a wide separation is like taking the block maximum of the width of this separation.
+As we want to avoid clustering, taking a to wide separation isn't very relevant.
+
+```{r}
+# plot empirical frequencies of exceedance
+Ts = (length(data_measure$F010)/52596)
+df <- data.frame(values = c(-sort(-X2h$pot),-sort(-Xo$pot),-sort(-X1$pot), -sort(-X2$pot), -sort(-X3$pot)),
+                 freq = c((1:length(X2h$pot))/Ts,(1:length(Xo$pot))/Ts,(1:length(X1$pot))/Ts, (1:length(X2$pot))/Ts, (1:length(X3$pot))/Ts),
+                 separation = factor(rep(c("2h","12h","24h", "72h", "1week"), 
+                                         c(length(X2h$pot),length(Xo$pot),length(X1$pot), length(X2$pot), length(X3$pot))),
+                                     levels = c("2h","12h","24h", "72h", "1week")))
+
+# print(c(length(Xo$pot),length(X1$pot), length(X2$pot), length(X3$pot)))
+
+ggplot(df, aes(x = values, y = freq, color = separation)) +
+  geom_step(direction = 'vh') +
+  labs(x = "Wind speed (m/s), 10m", y = "Frequency of exceedence (1/year)", title = "") +
+  scale_y_log10()+
+  theme_minimal()
+```
+
+These are empirical frequencies, with separation applied to avoid clustering (wind speed fluctuations during a single storm can lead to multiple “peaks”, but for applications, these are not really relevant; we want to know how often a storm happens during which a certain wind speed level is exceeded).
+
+However, we can see that the separation is not entirely “innocent”: it can also introduce a bias (because we make block maxima)
+
+> This seems to confirm that 12h is a good choice: it gets rid of the clustering, but the tail index isn't hardly affected.
+
+
+
+
+### Bootstrapping for confidence interval
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+boot = bootstrap(data_measure, Nb = 100, timesep = timesep, method = 'PoT')
+
+
+
+tailindexplot_3(boot$df,boot$original,pconf = 0.95, desc = boot$desc, plot_outliers = F)
+
+tailindexplot_2(list(out10min10m))
+
+```
+
+If we compare this with the previous plot with analytic interval of confidence, it seems they agree quiet well. Then we can take the analytic CI for PoT estimation. 
+
+
+### Try to bootstrap on 5days blocks
+We can try to resample our data taking 5 days blocks. However, we have to pay attention to take the same number of days of each time of the year.
+
+> to do
+
+
+## Block Maxima (Generalized Exteme Value Distribution)
+
+To estimate BM, we used the fgev.flex function with an assumption of stationarity in space and time. (space we take only one location)
+
+
+### 1 year block maxima
+```{r}
+# get year maxima
+
+bm <- BM_select(data_measure,365.25)
+
+trueTail = BM_fit(bm)
+```
+#### Bootstrap for confidence interval
+
+
+```{r,echo=FALSE,eval=FALSE}
+library(foreach)
+library(doParallel)
+
+# Set up parallel backend to use multiple processors
+numCores <- detectCores() - 2 # Use one less than the total number of cores
+cl <- makeCluster(numCores)
+registerDoParallel(cl)
+
+# Initialize the outs dataframe
+save <- data.frame()
+heights <- colnames(data_measure)[grepl("^F", names(data_measure))]
+
+# Perform parallel computation
+save <- foreach(height = heights, .combine = 'cbind') %dopar% {
+  # Initialize a temporary vector to store results for each height
+  temp <- numeric(100)
+  print(height)
+  for (n in 1:100) {
+    temp[n] <- mean(bootstrap(data_measure, Nb = 100, column = height, method = 'BM')$df$tails)
+  }
+  
+  # Return the result as a dataframe column
+  data.frame(temp)
+}
+
+# Stop the cluster
+stopCluster(cl)
+colnames(save) <- heights
+
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+TI_Est_plot(data_measure)
+```
+ Here we don't plot the outliers to have a better visualization of the median and the shape of the boxplots but we can have big outliers, showing that the data is not big enough to be very very precise (we only draw in a set of around 20 years).
+
+
+
+
+### 5 days block maxima
+
+We can see with autocorrelogram that the correlation of the data is relatively low after 5 days lag. Then, it is maybe interesting to try smaller block length than 1 year. However, we have to make sure that we take the same number of blocks in every part of each year. 
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+block_length = 5 # days
+bm <- BM_select(data_measure,block_length)
+truTail = BM_fit(bm, block_length)
+
+out <- bootstrap(data_measure,Nb=100,method = 'BM',block_length = block_length)
+
+# WSEst_BM(out,truTail,bm = bm,block_length = block_length)
+```
+
+
+
+```{r}
+layout(matrix(c(1, 2), 1, 2), widths = c(10, 3)) 
+
+block_length = 5
+bm = BM_select(data_measure,block_length)
+plot(sort(bm$max),seq(1/length(bm$max),1,length.out=length(bm$max)),type='l',ylim = c(0,1),
+     xlab = 'wind speed (m/s)',
+     ylab = 'probability',
+     main = paste0('Empirical CDFs (F) for BM\nwith size T=365.25 days and t=',block_length,' days'))
+lines(sort(bm$max),seq(1/length(bm$max),1,length.out=length(bm$max))^(365/block_length),col='blue')
+bm = BM_select(data_measure,365.25)
+points(sort(bm$max),seq(1/length(bm$max),1,length.out=length(bm$max)),col='red')
+par(mar = c(1, 1, 1, 2.3))
+plot.new()
+# Add a legend to the plot
+legend(
+  "right", # Position of the legend
+  legend = c(paste0('F_t, t=',block_length),'[F_t]^(T/t)', "F_T, T=365.25"),
+  inset = c(-0.4, 0),
+  col = c("black", "blue", "red"),
+  lty = c(1, 1, NA),
+  pch = c(NA, NA, 1),
+  bty = "n",
+  cex= 0.9,
+  xpd=TRUE
+)
+```
+
+
+However, because we take to much data that are low, there is a big bias in the results. Taking 5days block maxima is not really relevant because we have to take into account the seasonality.
+
+## Generalized Weibull
+
+```{r}
+X <- PoTselect(data_measure$F010,0.1,timesep)
+
+
+f = 0.02 #1/50 year-1 
+EI = length(X$pot)/sum(data_measure$F010>min(X$pot,na.rm=T),na.rm=T)
+d = 10 #min
+p = f*d/EI
+
+
+out = FitGW_iHilli(X$pot,p)
+
+tailindexplot_2(list(out))
+```
+
+
+
+
+## Predict design wind speed
+
+We consider 10m height wind speed.
+
+### Estimation with yearly Block Maxima 
+```{r, message=FALSE, warning=FALSE, results='hide'}
+out <- bootstrap(data_measure, Nb=500, column='F010', method='BM')
+bm <- BM_select(data_measure)
+trueTail <- BM_fit(bm, plot = F)
+
+WSEst <- list()
+WSEst$meas <- WSEst_BM(out,trueTail,bm = bm)
+print(WSEst$meas)
+
+```
+
+<!-- # ```{r} -->
+<!-- # hist(return_values[,ncol(return_values)],breaks = 100,xlab='wind speed',main='Hist of wind speed estimation for a return\nperiod of 10 000 years, measurement data') -->
+<!-- # ``` -->
+
+
+
+
+
+# EVA on model data
+
+We can repete the analysis we did for the measurement.
+
+```{r}
+# load data model 
+data_model <- read.csv("./Data_Cabauw/MODEL/modeldata.csv")
+data_model$DateTime <- ymd_hms(data_model$DateTime)
+data_model$Year <- ymd(data_model$Year)
+```
+
+## Check data
+```{r}
+# check the data
+years = data.frame(year=unique(data_model$Year))
+
+data_model = data_model[(data_model$DateTime >= ymd("1979-07-01") & data_model$DateTime  < ymd("2019-07-01")),]
+
+
+
+gg = ggplot(data_model,aes(x=DateTime,y=F010)) + geom_line() + geom_vline(data = years,aes(xintercept = year),color='red')
+
+print(gg)
+
+
+# boxplot(data_model[, grepl("^F", names(data_model))])
+```
+
+```{r}
+# Create frequency data by grouping by year and counting occurrences
+freq_data <- data_model %>%
+  group_by(year = lubridate::year(Year)) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+
+# Plot the data
+ggplot(freq_data, aes(x = year, y = count)) +
+  geom_line() +
+  geom_point(shape = '+') +
+  labs(x = 'Year', y = 'Count') +
+  theme_minimal() +
+  theme(legend.position = 'bottom')
+
+```
+It seems that the dataset for the model is good.
+
+
+## Peak over Threshold method (Generalized Pareto fit on model data)
+### Test if shape depends on heights
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+fraq_min = 1.5 #10^(-fraq_min)
+timesep = 12 # We have a timestep of 1 hour so this is 12h separation
+
+
+
+
+X <- PoTselect(data_model$F010,0.1,timesep)
+
+# plot_extremes(X,data_model)
+
+l0 <- round(10^(seq(-fraq_min, -0.05, 0.05))*length(X$pot))
+outmodel10m <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata=data.frame(label="10m 60min"))
+
+# plot_distribution(X,outmodel10m)
+X <- PoTselect(data_model$F020,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+out2 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="20m 60min"))
+
+
+X <- PoTselect(data_model$F040,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+out3 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="40m 60min"))
+
+X <- PoTselect(data_model$F080,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+out4 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="80m 60min"))
+
+
+X <- PoTselect(data_model$F150,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+out5 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="150m 60min"))
+
+
+X <- PoTselect(data_model$F200,0.1,timesep)
+l0 <- round(10^(seq(-fraq_min, -0, 0.05))*length(X$pot))
+out6 <- FitGP_MLE2(X$pot, 1, N= 0, r11= 1, fixedpar= NULL, l0= l0, sigma= Inf, metadata= data.frame(label="200m 60min"))
+
+
+tailindexplot_2(list(outmodel10m,out2,out3,out4,out5,out6), overlap=FALSE, fix_y = TRUE)
+```
+
+We can see that the tail index is more consistent for the model data than for the measured data.
+
+
+
+### Bootstrap
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+boot = bootstrap(data_model,Nb=100,timesep = timesep, method = 'PoT')
+
+tailindexplot_3(boot$df,boot$original,desc = boot$desc, plot_outliers = F)
+tailindexplot_2(list(outmodel10m))
+```
+
+The bootstrap CI and the analytic CI seem to agree again for model data.
+
+
+## Block Maxima method (Generalized Extreme Value Distribution)
+### Simple fit
+```{r}
+bm <- BM_select(data_model)
+
+trueTail = BM_fit(bm)
+```
+
+### Bootstrap for confidence interval
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+heights = colnames(data_model)[grepl("^F", names(data_model))]
+
+
+datasets <- list()
+Nbs <- c(500)
+
+for (Nb in Nbs) {
+  outs <- list()
+  for (height in heights) {
+    print(height)
+    # Bootstrap
+    outs[[as.character(height)]] <- bootstrap(data_model, Nb=Nb, column=height, method='BM')$df$tail
+  }
+  datasets[[as.character(Nb)]] <- data.frame(outs)
+}
+
+
+# Colors for each Nb
+colors <- brewer.pal(n = length(Nbs), name = "Set1")
+
+offset <- 0.15
+alpha <- 0.05
+z <- qnorm(1 - alpha / 2)
+
+
+tailindex <- c()
+
+for (height in heights){
+  tailindex <- c(tailindex,BM_fit(BM_select(data_model,height = height),plot=F)[1])
+}
+
+# Set up plot area with extra space on the right for the legend
+par(mar = c(5, 4, 4, 15) + 0.1)
+
+# Initialize plot
+plot(x = 1:length(heights), y = tailindex, col = "blue", pch = 19, cex = 1,
+     xlab = "heights", ylim = c(min(unlist(lapply(datasets, function(x) tailindex - z * apply(x, 2, sd)))), 
+                                max(unlist(lapply(datasets, function(x) tailindex + z * apply(x, 2, sd))))),
+     xlim = c(1-length(Nbs)*offset,length(heights)),
+     xaxt = "n")
+axis(1, at = 1:length(heights), labels = heights, tick = TRUE)
+
+# Loop over datasets
+for (i in seq_along(Nbs)) {
+  Nb <- Nbs[i]
+  dataset <- datasets[[as.character(Nb)]]
+  color <- colors[i]
+  
+  # Calculate the 95% confidence interval
+  lower_bounds <- tailindex - z * apply(dataset, 2, sd)
+  upper_bounds <- tailindex + z * apply(dataset, 2, sd)
+  
+  # Add points and confidence intervals
+  points(x = 1:length(heights) - offset * (i-1), y = colMeans(dataset), col = color, pch = 1, cex = 1)
+  arrows(x0 = 1:ncol(dataset) - offset * (i-1), y0 = lower_bounds, x1 = 1:ncol(dataset) - offset * (i-1), 
+         y1 = upper_bounds, code = 3, angle = 90, length = 0.1, col = color, lty = ifelse(color == "magenta" || color == "green", 2, 1))
+}
+
+# Add legend outside the plot
+legend("topright", inset = c(-0.8, 0), legend = c("Value without bootstrap", paste("Nb =", Nbs)), 
+       col = c("blue", colors), pch = c(19, rep(1, length(Nbs))), 
+       bty = 'n', xpd = TRUE)
+title("42 years drawn, model data, BM")
+
+```
+Comparing this result with the same for measurements, we see that with the model data, we have a more precise confidence interval, showing that the accuracy of the estimation is really dependent on the data quantity. Here we have data for 42 years, so we can draw from 42 years.
+
+
+
+
+
+
+## Predict design wind speed
+
+We consider 10m height wind speed.
+
+### Estimation with yearly Block Maxima 
+```{r, message=FALSE, warning=FALSE, results='hide'}
+out <- bootstrap(data_model, Nb=500, column='F010', method='BM')
+bm <- BM_select(data_model)
+trueTail <- BM_fit(bm)
+WSEst$model <- WSEst_BM(out,trueTail,bm=bm)
+print(WSEst$model)
+```
+
+
+
+
+# Mix model + measurements
+
+```{r}
+data_mix = data_measure[c('Year','F010')]
+data_mix$Year = data_mix$Year + years(1000)
+data_mix = rbind(data_mix,data_model[c('Year','F010')])
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+out <- bootstrap(data_mix, Nb=500, column='F010', method='BM')
+bm <- BM_select(data_mix)
+trueTail <- BM_fit(bm)
+WSEst$mix <- WSEst_BM(out,trueTail,bm = bm)
+print(WSEst$mix)
+```
+
+
+
+```{r}
+WSEst <- do.call(rbind, WSEst)[,'pred']
+WSEst <- Map(function(df,name){df$source <- name
+                      return(df)},
+    WSEst,names(WSEst))
+WSEst <- do.call(rbind,WSEst)
+WSEst
+ggplot(WSEst,aes(x=return,y=original,color=source))+geom_line()+geom_point()+
+  # geom_ribbon(aes(ymin=lower,ymax=upper,fill=fit),alpha=0.2)+
+  scale_x_log10()
+```
+
+/
